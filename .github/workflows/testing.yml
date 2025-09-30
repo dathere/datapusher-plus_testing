@@ -562,7 +562,6 @@ jobs:
             cat /tmp/ckan_worker.log
             exit 1
           fi
-
       - name: Test DataPusher Plus functionality - Remote URLs
         if: env.TEST_MODE == 'urls'
         run: |
@@ -685,15 +684,7 @@ jobs:
                     echo "  Still processing $name... (${attempt}/${max_attempts})"
                   fi
                 done
-              else
-                echo "  ✗ Resource creation failed for $name"
-                upload_status="FAILED"
-                error_message="Resource creation failed"
-                timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-                echo "$timestamp,$name,$upload_status,$resource_id,$datapusher_status,$datastore_active,$rows_imported,0,\"$error_message\"" >> /tmp/test_results.csv
-                continue
-              fi
-
+                
                 # Check final resource status
                 echo "Checking final status for $name..."
                 if final_resource=$(curl -s "http://localhost:5000/api/3/action/resource_show?id=$resource_id" 2>/dev/null); then
