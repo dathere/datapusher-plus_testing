@@ -685,15 +685,14 @@ jobs:
                     echo "  Still processing $name... (${attempt}/${max_attempts})"
                   fi
                 done
-
-            else
-              echo "  ✗ Resource creation failed for $name"
-              upload_status="FAILED"
-              error_message="Resource creation failed"
-              timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-              echo "$timestamp,$name,$upload_status,$resource_id,$datapusher_status,$datastore_active,$rows_imported,0,\"$error_message\"" >> /tmp/test_results.csv
-              continue
-            fi
+              else
+                echo "  ✗ Resource creation failed for $name"
+                upload_status="FAILED"
+                error_message="Resource creation failed"
+                timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+                echo "$timestamp,$name,$upload_status,$resource_id,$datapusher_status,$datastore_active,$rows_imported,0,\"$error_message\"" >> /tmp/test_results.csv
+                continue
+              fi
 
                 # Check final resource status
                 echo "Checking final status for $name..."
