@@ -631,9 +631,9 @@ jobs:
           done
 
           echo "URL mode summary: total=$total_files passed=$passed_files failed=$failed_files"
-
       - name: Test DataPusher Plus functionality - Local Files (HTTP Served)
-        if: env.TEST_MODE == 'dir'
+        if: ${{ env.TEST_MODE == 'dir' }}
+        shell: bash
         continue-on-error: true
         run: |
           set -u
@@ -669,13 +669,13 @@ jobs:
             name=$(echo "$filename" | sed 's/\.[^.]*$//')
             extension=$(echo "$filename" | sed 's/.*\.//' | tr '[:upper:]' '[:lower:]')
             case "$extension" in
-              csv)   echo "$name|http://localhost:8080/$filename|CSV|text/csv|CSV file: $filename" >> /tmp/test_files.txt ;;
-              tsv)   echo "$name|http://localhost:8080/$filename|TSV|text/tab-separated-values|TSV file: $filename" >> /tmp/test_files.txt ;;
+              csv)      echo "$name|http://localhost:8080/$filename|CSV|text/csv|CSV file: $filename" >> /tmp/test_files.txt ;;
+              tsv)      echo "$name|http://localhost:8080/$filename|TSV|text/tab-separated-values|TSV file: $filename" >> /tmp/test_files.txt ;;
               xlsx|xls) echo "$name|http://localhost:8080/$filename|XLSX|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|Excel file: $filename" >> /tmp/test_files.txt ;;
-              json)  echo "$name|http://localhost:8080/$filename|JSON|application/json|JSON file: $filename" >> /tmp/test_files.txt ;;
-              geojson) echo "$name|http://localhost:8080/$filename|GEOJSON|application/geo+json|GeoJSON file: $filename" >> /tmp/test_files.txt ;;
-              txt)   echo "$name|http://localhost:8080/$filename|TXT|text/plain|Text file: $filename" >> /tmp/test_files.txt ;;
-              *)     echo "$filename,Unsupported file format: .$extension" >> /tmp/skipped_files.csv ;;
+              json)     echo "$name|http://localhost:8080/$filename|JSON|application/json|JSON file: $filename" >> /tmp/test_files.txt ;;
+              geojson)  echo "$name|http://localhost:8080/$filename|GEOJSON|application/geo+json|GeoJSON file: $filename" >> /tmp/test_files.txt ;;
+              txt)      echo "$name|http://localhost:8080/$filename|TXT|text/plain|Text file: $filename" >> /tmp/test_files.txt ;;
+              *)        echo "$filename,Unsupported file format: .$extension" >> /tmp/skipped_files.csv ;;
             esac
           done
 
@@ -783,65 +783,72 @@ jobs:
 
       - name: Generate Combined Test Results and Worker Analysis
         if: always()
+        shell: bash
         run: |
-          # No -u: empty vars are okay; we guard math/greps.
-          set -e
+          # Bash for safe arithmetic; still guard math/greps carefully
+          set -euo pipefail
           echo "=== Generating Combined Test Results and Worker Analysis ==="
 
           echo "=== Processing DataPusher Plus Worker Logs ==="
-          if [ ! -f /tmp/ckan_worker.log ]; then
+          if [[ ! -f /tmp/ckan_worker.log ]]; then
             echo "No worker log file found at /tmp/ckan_worker.log"
             echo "timestamp,job_id,file_name,status,qsv_version,file_format,encoding,normalized,valid_csv,sorted,db_safe_headers,analysis,records,total_time,download_time,analysis_time,copying_time,indexing_time,formulae_time,metadata_time,rows_copied,columns_indexed,error_type,error_message,data_quality_score,processing_efficiency" > /tmp/worker_analysis.csv
           else
             echo "Worker log file size: $(du -h /tmp/ckan_worker.log | cut -f1)"
-            python3 ${GITHUB_WORKSPACE}/tests/log_analyzer.py analyze /tmp/ckan_worker.log /tmp/worker_analysis.csv || true
+            python3 "${GITHUB_WORKSPACE}/tests/log_analyzer.py" analyze /tmp/ckan_worker.log /tmp/worker_analysis.csv || true
           fi
 
-          if [ ! -f /tmp/test_results.csv ] && [ ! -f /tmp/worker_analysis.csv ]; then
-            echo "# DataPusher Plus Test Results" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "No test data available to analyze" >> $GITHUB_STEP_SUMMARY
+          # If neither file exists, still finish gracefully
+          if [[ ! -f /tmp/test_results.csv && ! -f /tmp/worker_analysis.csv ]]; then
+            {
+              echo "# DataPusher Plus Test Results"
+              echo
+              echo "No test data available to analyze"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
+          # ---- Safe counters (all integers) ----
           total_tests=0; skipped_count=0; total_files_in_dir=0
           passed=0; failed=0; error_count=0
           tested_success_rate=0; overall_success_rate=0
 
-          if [ -f /tmp/test_results.csv ]; then
-            total_lines=$(wc -l < /tmp/test_results.csv | tr -d ' ')
-            total_tests=$(( total_lines > 0 ? total_lines - 1 : 0 ))
-
-            if [ -f /tmp/skipped_files.csv ]; then
-              skipped_lines=$(wc -l < /tmp/skipped_files.csv | tr -d ' ')
-              skipped_count=$(( skipped_lines > 0 ? skipped_lines - 1 : 0 ))
+          if [[ -f /tmp/test_results.csv ]]; then
+            total_lines=$(wc -l < /tmp/test_results.csv | tr -d '[:space:]')
+            if [[ "${total_lines:-0}" -gt 0 ]]; then
+              (( total_tests = total_lines - 1 ))
             fi
 
-            total_files_in_dir=$(( total_tests + skipped_count ))
-
-            if [ "$total_tests" -gt 0 ]; then
-              passed=$(grep -E -c ",SUCCESS,.*,complete,true," /tmp/test_results.csv 2>/dev/null || echo "0"); passed=${passed:-0}
-              failed=$(tail -n +2 /tmp/test_results.csv 2>/dev/null | grep -Ev ",SUCCESS,.*,complete,true," | wc -l | tr -d ' ')
-              failed=${failed:-0}
-              error_count=$(grep -E -c ",error," /tmp/test_results.csv 2>/dev/null || echo "0"); error_count=$(echo "$error_count" | tr -d '\n '); error_count=${error_count:-0}
-
-              if [ "$total_tests" -gt 0 ]; then
-                tested_success_rate=$(( passed * 100 / total_tests ))
+            if [[ -f /tmp/skipped_files.csv ]]; then
+              skipped_lines=$(wc -l < /tmp/skipped_files.csv | tr -d '[:space:]')
+              if [[ "${skipped_lines:-0}" -gt 0 ]]; then
+                (( skipped_count = skipped_lines - 1 ))
               fi
-              if [ "$total_files_in_dir" -gt 0 ]; then
-                overall_success_rate=$(( passed * 100 / total_files_in_dir ))
+            fi
+
+            (( total_files_in_dir = total_tests + skipped_count ))
+
+            if [[ "$total_tests" -gt 0 ]]; then
+              # Count passes: SUCCESS + complete + datastore_active=true
+              passed=$(grep -E -c ',SUCCESS,.*,complete,true,' /tmp/test_results.csv 2>/dev/null || echo 0)
+              failed=$(tail -n +2 /tmp/test_results.csv 2>/dev/null | grep -Ev ',SUCCESS,.*,complete,true,' | wc -l | tr -d '[:space:]')
+              error_count=$(grep -E -c ',error,' /tmp/test_results.csv 2>/dev/null || echo 0)
+
+              (( tested_success_rate = (passed * 100) / total_tests ))
+              if [[ "$total_files_in_dir" -gt 0 ]]; then
+                (( overall_success_rate = (passed * 100) / total_files_in_dir ))
               fi
             fi
           fi
 
           worker_analysis_available=false
-          [ -f /tmp/worker_analysis.csv ] && worker_analysis_available=true
+          [[ -f /tmp/worker_analysis.csv ]] && worker_analysis_available=true
 
           {
             echo "# DataPusher Plus Test Results"
-            echo ""
+            echo
             echo "## Summary"
-            echo ""
+            echo
             echo "| Metric | Value |"
             echo "|--------|-------|"
             echo "| Total Files in Directory | $total_files_in_dir |"
@@ -852,141 +859,142 @@ jobs:
             echo "| Errors | $error_count |"
             echo "| Success Rate (Tested Files) | ${tested_success_rate}% |"
             echo "| Success Rate (All Files) | ${overall_success_rate}% |"
-            echo ""
+            echo
 
-            if [ "$skipped_count" -gt 0 ] && [ -f /tmp/skipped_files.csv ]; then
+            if [[ "$skipped_count" -gt 0 && -f /tmp/skipped_files.csv ]]; then
               echo "## Skipped Files"
-              echo ""
+              echo
               echo "| File Name | Reason Skipped |"
               echo "|-----------|----------------|"
               tail -n +2 /tmp/skipped_files.csv | while IFS=',' read -r file_name reason; do
                 echo "| $file_name | $reason |"
               done
-              echo ""
+              echo
             fi
 
-            if [ "$worker_analysis_available" = true ]; then
-              total_jobs=$(tail -n +2 /tmp/worker_analysis.csv 2>/dev/null | wc -l | tr -d ' '); total_jobs=${total_jobs:-0}
-              if [ "$total_jobs" -gt 0 ]; then
+            if $worker_analysis_available; then
+              total_jobs=$(tail -n +2 /tmp/worker_analysis.csv 2>/dev/null | wc -l | tr -d '[:space:]'); total_jobs=${total_jobs:-0}
+              if [[ "$total_jobs" -gt 0 ]]; then
                 echo "## Complete Job Analysis"
-                echo ""
+                echo
                 echo "| # | File Name | Status | Records | Columns | Time (s) | Valid CSV | Headers Safe | Error Type | Quality Score |"
                 echo "|---|-----------|--------|---------|---------|----------|-----------|--------------|------------|---------------|"
                 counter=1
-                tail -n +2 /tmp/worker_analysis.csv | while IFS=',' read timestamp job_id file_name status qsv_version file_format encoding normalized valid_csv sorted db_safe_headers analysis records total_time download_time analysis_time copying_time indexing_time formulae_time metadata_time rows_copied columns_indexed error_type error_message data_quality_score processing_efficiency; do
-                  full_file_name=$(echo "$file_name" | sed 's/\.\.\.//')
-                  [ -n "$records" ] || records="0"
-                  [ -n "$columns_indexed" ] || columns_indexed="0"
-                  [ -n "$total_time" ] || total_time="0"
-                  [ -n "$data_quality_score" ] || data_quality_score="-"
-                  [ -n "$error_type" ] || error_type="-"
+                tail -n +2 /tmp/worker_analysis.csv | while IFS=',' read -r timestamp job_id file_name status qsv_version file_format encoding normalized valid_csv sorted db_safe_headers analysis records total_time download_time analysis_time copying_time indexing_time formulae_time metadata_time rows_copied columns_indexed error_type error_message data_quality_score processing_efficiency; do
+                  full_file_name="${file_name//.../}"
+                  : "${records:=0}"; : "${columns_indexed:=0}"; : "${total_time:=0}"; : "${data_quality_score:=-}"; : "${error_type:=-}"
                   case "$status" in
-                    "SUCCESS") status_display="✅ SUCCESS" ;;
-                    "ERROR") status_display="❌ ERROR" ;;
-                    "INCOMPLETE") status_display="⏸️ INCOMPLETE" ;;
+                    SUCCESS) status_display="✅ SUCCESS" ;;
+                    ERROR) status_display="❌ ERROR" ;;
+                    INCOMPLETE) status_display="⏸️ INCOMPLETE" ;;
                     *) status_display="❓ $status" ;;
                   esac
                   echo "| $counter | $full_file_name | $status_display | $records | $columns_indexed | $total_time | $valid_csv | $db_safe_headers | $error_type | $data_quality_score |"
-                  counter=$((counter + 1))
+                  ((counter++))
                 done
-                echo ""
+                echo
 
-                success_jobs=$(grep -c ",SUCCESS," /tmp/worker_analysis.csv 2>/dev/null || echo "0")
-                error_jobs=$(grep -c ",ERROR," /tmp/worker_analysis.csv 2>/dev/null || echo "0")
+                success_jobs=$(grep -c ',SUCCESS,' /tmp/worker_analysis.csv 2>/dev/null || echo 0)
+                error_jobs=$(grep -c ',ERROR,' /tmp/worker_analysis.csv 2>/dev/null || echo 0)
 
                 echo "## File Analysis"
-                echo ""
-                if [ "$success_jobs" -gt 0 ]; then
+                echo
+                if [[ "$success_jobs" -gt 0 ]]; then
                   echo "### File Formats Processed"
-                  echo ""
-                  formats=$(tail -n +2 /tmp/worker_analysis.csv 2>/dev/null | grep ",SUCCESS," | cut -d',' -f6 | sort | uniq -c)
-                  if [ -n "$formats" ]; then
+                  echo
+                  formats=$(tail -n +2 /tmp/worker_analysis.csv 2>/dev/null | grep ',SUCCESS,' | cut -d',' -f6 | sort | uniq -c)
+                  if [[ -n "$formats" ]]; then
                     echo "| Format | Files | Percentage |"
                     echo "|--------|-------|------------|"
-                    echo "$formats" | while read count format; do
-                      count=$(echo "$count" | tr -d ' '); [ -n "$count" ] || count=0
-                      percentage=$(( count * 100 / success_jobs ))
+                    while read -r count format; do
+                      count="${count//[[:space:]]/}"; [[ -n "$count" ]] || count=0
+                      (( percentage = (count * 100) / success_jobs ))
                       case "$format" in
-                        "CSV") format_icon="📊" ;;
-                        "XLSX"|"XLS") format_icon="📈" ;;
-                        "JSON") format_icon="🔧" ;;
-                        "TXT") format_icon="📝" ;;
-                        *) format_icon="📄" ;;
+                        CSV)  icon="📊" ;;
+                        XLSX|XLS) icon="📈" ;;
+                        JSON) icon="🔧" ;;
+                        TXT)  icon="📝" ;;
+                        *)    icon="📄" ;;
                       esac
-                      echo "| $format_icon $format | $count | $percentage% |"
-                    done
+                      echo "| $icon $format | $count | $percentage% |"
+                    done <<< "$formats"
                   else
                     echo "No format data available"
                   fi
-                  echo ""
+                  echo
+
                   echo "### Encoding Distribution"
-                  echo ""
-                  encodings=$(tail -n +2 /tmp/worker_analysis.csv 2>/dev/null | grep ",SUCCESS," | cut -d',' -f7 | sort | uniq -c)
-                  if [ -n "$encodings" ]; then
+                  echo
+                  encodings=$(tail -n +2 /tmp/worker_analysis.csv 2>/dev/null | grep ',SUCCESS,' | cut -d',' -f7 | sort | uniq -c)
+                  if [[ -n "$encodings" ]]; then
                     echo "| Encoding | Files | Status |"
                     echo "|----------|-------|--------|"
-                    echo "$encodings" | while read count encoding; do
-                      if [ -n "$encoding" ]; then
-                        if [ "$encoding" = "UTF-8" ] || [ "$encoding" = "UTF" ]; then status_icon="✅"; else status_icon="⚠️"; fi
+                    while read -r count encoding; do
+                      if [[ -n "$encoding" ]]; then
+                        if [[ "$encoding" == "UTF-8" || "$encoding" == "UTF" ]]; then status_icon="✅"; else status_icon="⚠️"; fi
                         echo "| $status_icon $encoding | $count | Compatible |"
                       else
                         echo "| ❓ Unknown | $count | Needs Review |"
                       fi
-                    done
+                    done <<< "$encodings"
                   else
                     echo "No encoding data available"
                   fi
-                  echo ""
+                  echo
                 fi
 
                 echo "## Error Analysis"
-                echo ""
-                if [ "$error_jobs" -gt 0 ]; then
+                echo
+                if [[ "$error_jobs" -gt 0 ]]; then
                   echo "| File | Error Type | Error Message |"
                   echo "|------|------------|---------------|"
-                  tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | cut -d',' -f3,23,24 | while IFS=',' read file error_type error_msg; do
-                    clean_error=$(echo "$error_msg" | sed 's/^"//;s/"$//')
-                    clean_file=$(echo "$file" | sed 's/\.\.\.//')
+                  tail -n +2 /tmp/worker_analysis.csv | grep ',ERROR,' | cut -d',' -f3,23,24 | \
+                  while IFS=',' read -r file error_type error_msg; do
+                    clean_error="${error_msg%\"}"; clean_error="${clean_error#\"}"
+                    clean_file="${file//.../}"
                     echo "| $clean_file | $error_type | $clean_error |"
                   done
-                  echo ""
+                  echo
                 else
                   echo "✅ No errors found in worker logs"
-                  echo ""
+                  echo
                 fi
               fi
             fi
 
-            if [ "$total_tests" -eq 0 ] && [ "$skipped_count" -gt 0 ]; then
+            if [[ "$total_tests" -eq 0 && "$skipped_count" -gt 0 ]]; then
               echo "## No Testable Files"
-              echo ""
+              echo
               echo "All files in the test directory were skipped."
-            elif [ "$total_tests" -eq 0 ]; then
+            elif [[ "$total_tests" -eq 0 ]]; then
               echo "## No Files Found"
-              echo ""
+              echo
               echo "No files found in test directory to test."
-            elif [ "$passed" -eq "$total_tests" ]; then
+            elif [[ "$passed" -eq "$total_tests" ]]; then
               echo "## All Tested Files Passed 🎉"
-            elif [ "$passed" -gt 0 ]; then
+            elif [[ "$passed" -gt 0 ]]; then
               echo "## Result: Partial Success"
             else
               echo "## Result: All Tested Files Failed ❌"
-              echo ""
+              echo
               echo "### All Failed Files:"
-              tail -n +2 /tmp/test_results.csv | while IFS=',' read -r timestamp file_name upload_status resource_id datapusher_status datastore_active rows_imported processing_time error_message; do
-                clean_error=$(echo "$error_message" | sed 's/^"//;s/"$//')
+              tail -n +2 /tmp/test_results.csv | \
+              while IFS=',' read -r timestamp file_name upload_status resource_id datapusher_status datastore_active rows_imported processing_time error_message; do
+                clean_error="${error_message%\"}"; clean_error="${clean_error#\"}"
                 echo "- **$file_name**: $clean_error"
               done
             fi
 
-            echo ""
+            echo
             echo "---"
-            echo ""
+            echo
             echo "**Analysis completed:** $(date '+%A, %B %d, %Y at %I:%M %p %Z')"
           } > /tmp/combined_summary.md
 
-          cat /tmp/combined_summary.md >> $GITHUB_STEP_SUMMARY
+          cat /tmp/combined_summary.md >> "$GITHUB_STEP_SUMMARY"
           echo "Combined analysis summary generated."
+
+
 
       - name: Upload test results as artifact
         uses: actions/upload-artifact@v4
