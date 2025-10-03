@@ -1,26 +1,16 @@
-name: Experimental DataPusher+ Testing Run
+name: Automated DataPusher+ Testing Run
 on:
   workflow_dispatch:
-     inputs:
-       datapusher_branch:
-         description: 'DataPusher+ branch or commit'
-         required: false
-         default: 'main'
-         type: string
-       testing_directory:
-         description: 'testing files directory'
-         required: true
-         default: 'quick'
-         type: string
 env:
-  FILES_DIR: ${{ github.event.inputs.testing_directory || 'main' }}
-  DATAPUSHER_BRANCH: ${{ github.event.inputs.datapusher_branch || 'main' }}
+  FILES_DIR: "custom"
+  DATAPUSHER_BRANCH: "main"
   CKAN_VERSION: "2.11"
   POSTGRES_PASSWORD: postgres
   CKAN_DB_PASSWORD: pass
   CKAN_SITE_URL: http://localhost:5000
   CKAN_SITE_ID: default
   CKAN_SITE_TITLE: "CKAN Test Instance"
+  QSV_VER : "7.1.0"
 jobs:
   setup:
     runs-on: ubuntu-latest
@@ -124,7 +114,6 @@ jobs:
         run: |
           set -eu
           echo "Attempting to download static qsv musl binary (best-effort)..."
-          QSV_VER="7.1.0"
           QSV_ZIP="qsv-${QSV_VER}-x86_64-unknown-linux-musl.zip"
           QSV_URL="https://github.com/dathere/qsv/releases/download/${QSV_VER}/${QSV_ZIP}"
           mkdir -p /tmp/qsv && cd /tmp/qsv  
