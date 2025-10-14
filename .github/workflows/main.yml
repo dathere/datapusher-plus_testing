@@ -391,12 +391,11 @@ jobs:
             echo "Added ckan.plugins line with required plugins."
           fi
           
-          # Cleanup temp files
           rm -f "$REPLACE_FILE" "$ADD_FILE" "$MISSING_ADD_FILE"
           
           echo "---- /srv/app/src/ckan/test-core.ini (cat) ----"
           cat /srv/app/src/ckan/test-core.ini  
-          echo "----
+          echo "---- end ----"
       - name: Initialize CKAN database
         run: |
           
