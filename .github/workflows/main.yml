@@ -1031,8 +1031,7 @@ jobs:
           echo ""
           echo "Test completed at: $(date)"
 
-      - name: Generate Combined Test Results and Worker Analysis
-        if: always()
+      - name: Generate combined test results and worker analysis
         run: |
           set -eu
           echo "=== Generating Combined Test Results and Worker Analysis ==="
@@ -1043,7 +1042,7 @@ jobs:
           # Check if worker log exists
           if [ ! -f /tmp/ckan_worker.log ]; then
             echo "No worker log file found at /tmp/ckan_worker.log"
-            # Create comprehensive header structure with all new fields including enhanced analytics
+            # Create comprehensive header structure
             echo "timestamp,job_id,file_name,status,qsv_version,file_format,encoding,normalized,valid_csv,sorted,db_safe_headers,analysis,records,total_time,download_time,analysis_time,copying_time,indexing_time,formulae_time,metadata_time,rows_copied,columns_indexed,error_type,error_message,data_quality_score,processing_efficiency" > /tmp/worker_analysis.csv
           else
             echo "Worker log file size: $(du -h /tmp/ckan_worker.log | cut -f1)"
@@ -1075,23 +1074,32 @@ jobs:
           # Process test results if available
           if [ -f /tmp/test_results.csv ]; then
             # Count total results
-            total_lines=$(wc -l < /tmp/test_results.csv)
+            total_lines=$(wc -l < /tmp/test_results.csv | tr -d ' \n')
             total_tests=$((total_lines - 1))  # Subtract header line
             
             # Count skipped files
             if [ -f /tmp/skipped_files.csv ]; then
-              skipped_lines=$(wc -l < /tmp/skipped_files.csv)
+              skipped_lines=$(wc -l < /tmp/skipped_files.csv | tr -d ' \n')
               skipped_count=$((skipped_lines - 1))  # Subtract header line
             fi
             
             total_files_in_dir=$((total_tests + skipped_count))
             
             if [ $total_tests -gt 0 ]; then
-              # Count results by status
+              # Count results by status - CLEAN ALL NUMBERS
               passed=$(grep -c ",SUCCESS,.*,complete,true," /tmp/test_results.csv 2>/dev/null || echo "0")
+              passed=$(echo "$passed" | tr -d ' \n')
+              
               failed=$(tail -n +2 /tmp/test_results.csv | grep -v ",SUCCESS,.*,complete,true," | wc -l)
+              failed=$(echo "$failed" | tr -d ' \n')
+              
               error_count=$(grep -c ",error," /tmp/test_results.csv 2>/dev/null || echo "0")
-              error_count=$(echo "$error_count" | tr -d '\n')
+              error_count=$(echo "$error_count" | tr -d ' \n')
+              
+              # Ensure variables are integers (default to 0 if empty)
+              passed=${passed:-0}
+              failed=${failed:-0}
+              error_count=${error_count:-0}
               
               # Calculate success rates
               tested_success_rate=$(( passed * 100 / total_tests ))
@@ -1142,7 +1150,9 @@ jobs:
             
             # Show worker analysis table if available
             if [ "$worker_analysis_available" = true ]; then
-              total_jobs=$(tail -n +2 /tmp/worker_analysis.csv | wc -l)
+              total_jobs=$(tail -n +2 /tmp/worker_analysis.csv | wc -l | tr -d ' \n')
+              total_jobs=${total_jobs:-0}
+              
               if [ $total_jobs -gt 0 ]; then
                 echo "## Complete Job Analysis"
                 echo ""
@@ -1177,8 +1187,13 @@ jobs:
                 echo ""
                 
                 # Add worker analysis sections
-                success_jobs=$(grep -c ",SUCCESS," /tmp/worker_analysis.csv || echo "0")
-                error_jobs=$(grep -c ",ERROR," /tmp/worker_analysis.csv || echo "0")
+                success_jobs=$(grep -c ",SUCCESS," /tmp/worker_analysis.csv 2>/dev/null || echo "0")
+                success_jobs=$(echo "$success_jobs" | tr -d ' \n')
+                success_jobs=${success_jobs:-0}
+                
+                error_jobs=$(grep -c ",ERROR," /tmp/worker_analysis.csv 2>/dev/null || echo "0")
+                error_jobs=$(echo "$error_jobs" | tr -d ' \n')
+                error_jobs=${error_jobs:-0}
                 
                 # File Analysis
                 echo "## File Analysis"
@@ -1193,7 +1208,9 @@ jobs:
                     echo "| Format | Files | Percentage |"
                     echo "|--------|-------|------------|"
                     echo "$formats" | while read count format; do
-                      percentage=$((count * 100 / success_jobs))
+                      count=$(echo "$count" | tr -d ' \n')
+                      count=${count:-0}
+                      percentage=$(( count * 100 / success_jobs ))
                       # Add format icon
                       case "$format" in
                         "CSV") format_icon="📊" ;;
@@ -1240,7 +1257,6 @@ jobs:
                 if [ $error_jobs -gt 0 ]; then
                   echo "### Failed Files Details"
                   echo ""
-                  echo ""
                   echo "| File | Error Type | Error Message |"
                   echo "|------|------------|---------------|"
                   tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | cut -d',' -f3,23,24 | while IFS=',' read file error_type error_msg; do
@@ -1269,9 +1285,9 @@ jobs:
               fi
             fi
             
-            # Add comprehensive analysis based on results (keep original logic)
+            # Add comprehensive analysis based on results
             if [ $total_tests -eq 0 ] && [ $skipped_count -gt 0 ]; then
-              echo "##  No Testable Files ⚠️"
+              echo "## No Testable Files ⚠️"
               echo ""
               echo "All files in the test directory were skipped."
               echo ""
@@ -1283,12 +1299,12 @@ jobs:
               echo "**Recommendation:** Add supported data files to test directory."
               
             elif [ $total_tests -eq 0 ]; then
-              echo "##  No Files Found ❌"
+              echo "## No Files Found ❌"
               echo ""
               echo "No files found in test directory to test."
               
             elif [ $passed -eq $total_tests ]; then
-              echo "##  All Tested Files Passed! 🎉"
+              echo "## All Tested Files Passed! 🎉"
               echo ""
               echo "DataPusher Plus is working correctly with all testable files."
               if [ $skipped_count -gt 0 ]; then
@@ -1341,7 +1357,6 @@ jobs:
           echo "Preview of generated summary:"
           echo "=================================="
           cat /tmp/combined_summary.md
-
       - name: Upload test results as artifact
         uses: actions/upload-artifact@v4
         if: always()
