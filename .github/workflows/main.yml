@@ -123,19 +123,33 @@ jobs:
           python3 -m pip install --upgrade ckanapi datasize
           
           # Install system dependencies INCLUDING GDAL for geospatial support
-          # REMOVED: python3-virtualenv python3-dev python3-pip python3-wheel (use container's Python)
-          apt install -y build-essential libxslt1-dev libxml2-dev zlib1g-dev \
-                         git libffi-dev libpq-dev uchardet unzip \
-                         libgdal-dev gdal-bin
+          apt-get update && apt-get install -y --no-install-recommends \
+            build-essential \
+            libxslt1-dev \
+            libxml2-dev \
+            zlib1g-dev \
+            git \
+            libffi-dev \
+            libpq-dev \
+            uchardet \
+            unzip \
+            libgdal-dev \
+            gdal-bin \
+            python3-dev \
+            && rm -rf /var/lib/apt/lists/*
           
           # Install geospatial Python packages required by datapusher-plus
           echo "Installing geospatial Python packages..."
-          python3 -m pip install fiona shapely pyproj
+          python3 -m pip install --no-cache-dir fiona shapely pyproj
+          
+          # CRITICAL: Install pandas - required by datapusher-plus spatial_helpers
+          echo "Installing pandas (required by datapusher-plus)..."
+          python3 -m pip install --no-cache-dir pandas
           
           # Install datapusher-plus package (NON-EDITABLE install to avoid build issues)
           echo "Installing datapusher-plus from branch: $DATAPUSHER_BRANCH"
           python3 -m pip install --upgrade "setuptools>=65.0"
-          python3 -m pip install "git+https://github.com/dathere/datapusher-plus.git@$DATAPUSHER_BRANCH"
+          python3 -m pip install --no-cache-dir "git+https://github.com/dathere/datapusher-plus.git@$DATAPUSHER_BRANCH"
           
           # Install ckanext-scheming (keep as editable since it's stable)
           python3 -m pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'  
@@ -171,23 +185,27 @@ jobs:
       - name: Setup CKAN configuration (/srv/app/src/ckan/test-core.ini)
         run: |
           set -eu
+          
           # Defensive URL substitutions (keep these)
-          sed -i "s|^sqlalchemy.url.*|sqlalchemy.url = ${CKAN_SQLALCHEMY_URL:-***postgres/ckan_test}|g" /srv/app/src/ckan/test-core.ini  
-          sed -i "s|^ckan.datastore.write_url.*|ckan.datastore.write_url = ${CKAN_DATASTORE_WRITE_URL:-***postgres/datastore_test}|g" /srv/app/src/ckan/test-core.ini  
-          sed -i "s|^ckan.datastore.read_url.*|ckan.datastore.read_url = ${CKAN_DATASTORE_READ_URL:-***postgres/datastore_test}|g" /srv/app/src/ckan/test-core.ini  
+          sed -i "s|^sqlalchemy.url.*|sqlalchemy.url = ${CKAN_SQLALCHEMY_URL:-postgresql://ckan_default:pass@postgres/ckan_test}|g" /srv/app/src/ckan/test-core.ini  
+          sed -i "s|^ckan.datastore.write_url.*|ckan.datastore.write_url = ${CKAN_DATASTORE_WRITE_URL:-postgresql://ckan_default:pass@postgres/datastore_test}|g" /srv/app/src/ckan/test-core.ini  
+          sed -i "s|^ckan.datastore.read_url.*|ckan.datastore.read_url = ${CKAN_DATASTORE_READ_URL:-postgresql://datastore_default:pass@postgres/datastore_test}|g" /srv/app/src/ckan/test-core.ini  
+          
           if ! grep -q "^solr_url" /srv/app/src/ckan/test-core.ini; then
             echo "solr_url = ${CKAN_SOLR_URL:-http://solr:8983/solr/ckan}" >> /srv/app/src/ckan/test-core.ini
           fi
           if ! grep -q "^ckan.redis.url" /srv/app/src/ckan/test-core.ini; then
             echo "ckan.redis.url = ${CKAN_REDIS_URL:-redis://redis:6379/1}" >> /srv/app/src/ckan/test-core.ini
           fi
+          
           # Desired values (use env vars when present, otherwise fall back)
           CKAN_SITE_URL="${CKAN_SITE_URL:-http://localhost:5000}"
-          CKAN_SQLALCHEMY_URL="${CKAN_SQLALCHEMY_URL:-***postgres/ckan_test}"
-          CKAN_DATASTORE_WRITE_URL="${CKAN_DATASTORE_WRITE_URL:-***postgres/datastore_test}"
-          CKAN_DATASTORE_READ_URL="${CKAN_DATASTORE_READ_URL:-***postgres/datastore_test}"
+          CKAN_SQLALCHEMY_URL="${CKAN_SQLALCHEMY_URL:-postgresql://ckan_default:pass@postgres/ckan_test}"
+          CKAN_DATASTORE_WRITE_URL="${CKAN_DATASTORE_WRITE_URL:-postgresql://ckan_default:pass@postgres/datastore_test}"
+          CKAN_DATASTORE_READ_URL="${CKAN_DATASTORE_READ_URL:-postgresql://datastore_default:pass@postgres/datastore_test}"
           CKAN_SOLR_URL="${CKAN_SOLR_URL:-http://solr:8983/solr/ckan}"
           CKAN_REDIS_URL="${CKAN_REDIS_URL:-redis://redis:6379/1}"
+          
           # create temp files to hold lists (POSIX sh-safe)
           REPLACE_FILE="$(mktemp)"
           ADD_FILE="$(mktemp)"
@@ -195,6 +213,7 @@ jobs:
           : > "$REPLACE_FILE"
           : > "$ADD_FILE"
           : > "$MISSING_ADD_FILE"
+          
           # REPLACE_ENTRIES (key|value) - write expanded lines to REPLACE_FILE
           printf '%s\n' \
             "ckan.site_url|${CKAN_SITE_URL}" \
@@ -204,6 +223,7 @@ jobs:
             "solr_url|${CKAN_SOLR_URL}" \
             "ckan.redis.url|${CKAN_REDIS_URL}" \
             > "$REPLACE_FILE"
+          
           # ADD_LINES content (one entry per line). Comments start with '#'
           cat > "$ADD_FILE" <<'EOF'
           ckan.site_id = default
@@ -216,7 +236,6 @@ jobs:
           ckanext.datapusher_plus.use_proxy = false
           ckanext.datapusher_plus.download_proxy = 
           ckanext.datapusher_plus.ssl_verify = false
-          # supports INFO, DEBUG, TRACE - use DEBUG or TRACE when debugging scheming Formulas
           ckanext.datapusher_plus.upload_log_level = INFO
           ckanext.datapusher_plus.formats = csv tsv tab ssv xls xlsx xlsxb xlsm ods geojson shp qgis zip
           ckanext.datapusher_plus.pii_screening = false
@@ -252,39 +271,48 @@ jobs:
           ckanext.datapusher_plus.spatial_simplication_relative_tolerance = 0.1
           ckanext.datapusher_plus.latitude_fields = latitude,lat
           ckanext.datapusher_plus.longitude_fields = longitude,long,lon
-          ckanext.datapusher_plus.jinja2_bytecode_cache_dir = /tmp/jinja2_butecode_cache
+          ckanext.datapusher_plus.jinja2_bytecode_cache_dir = /tmp/jinja2_bytecode_cache
           ckanext.datapusher_plus.auto_unzip_one_file = true
           EOF
+          
           if [ -f /srv/app/src/ckan/test-core.ini ]; then
             echo "Patching selective keys in /srv/app/src/ckan/test-core.ini (only the keys you listed)..."
-            # Ensure single debug = true under [DEFAULT]: remove existing debug lines in DEFAULT then add one
-            awk 'BEGIN{in=0}
-              /^\[DEFAULT\]/{ print; in=1; next }
-              /^\[.*\]/{ if(in){ print "debug = true"; in=0 } }
-              {
-                if(in){
-                  if($1 == "debug") next
-                  print
-                } else {
-                  print
+            
+            # Ensure single debug = true under [DEFAULT] - FIXED AWK SYNTAX
+            awk '
+              BEGIN { in_default=0 }
+              /^\[DEFAULT\]/ { print; in_default=1; next }
+              /^\[.*\]/ { 
+                if (in_default) { 
+                  print "debug = true"
+                  in_default=0 
                 }
+                print
+                next
               }
-              END { if(in) print "debug = true" }' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.tmp && mv /srv/app/src/ckan/test-core.ini.tmp /srv/app/src/ckan/test-core.ini
+              {
+                if (in_default && $1 == "debug") next
+                print
+              }
+              END { if (in_default) print "debug = true" }
+            ' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.tmp && \
+              mv /srv/app/src/ckan/test-core.ini.tmp /srv/app/src/ckan/test-core.ini
+            
             # Process REPLACE_FILE: replace if present, otherwise write to missing file
             while IFS= read -r entry || [ -n "$entry" ]; do
               key="$(printf '%s' "$entry" | cut -d'|' -f1)"
               value="$(printf '%s' "$entry" | cut -d'|' -f2-)"
-              # escape backslashes and ampersands for sed replacement
               esc_value="$(printf '%s' "$value" | sed -e 's/[\/&]/\\&/g')"
+              
               if grep -q -E "^[[:space:]]*$(printf '%s' "$key" | sed 's/[][^$.*/]/\\&/g')[[:space:]]*=" /srv/app/src/ckan/test-core.ini; then
                 sed -i -E "s|^[[:space:]]*$(printf '%s' "$key" | sed 's/[][^$.*/]/\\&/g')[[:space:]]*=.*|${key} = ${esc_value}|g" /srv/app/src/ckan/test-core.ini  
               else
                 printf '%s\n' "${key} = ${value}" >> "$MISSING_ADD_FILE"
               fi
             done < "$REPLACE_FILE"
+            
             # Process ADD_FILE: replace if present, otherwise collect to missing file
             while IFS= read -r ln || [ -n "$ln" ]; do
-              # comment lines - check if exact comment exists
               case "$ln" in
                 \#*)
                   if ! grep -Fq "$ln" /srv/app/src/ckan/test-core.ini; then
@@ -295,6 +323,7 @@ jobs:
                   key="$(printf '%s' "$ln" | cut -d'=' -f1 | sed 's/[[:space:]]*$//')"
                   value="$(printf '%s' "$ln" | cut -d'=' -f2- | sed 's/^[[:space:]]*//')"
                   esc_value="$(printf '%s' "$value" | sed -e 's/[\/&]/\\&/g')"
+                  
                   if grep -q -E "^[[:space:]]*$(printf '%s' "$key" | sed 's/[][^$.*/]/\\&/g')[[:space:]]*=" /srv/app/src/ckan/test-core.ini; then
                     sed -i -E "s|^[[:space:]]*$(printf '%s' "$key" | sed 's/[][^$.*/]/\\&/g')[[:space:]]*=.*|${key} = ${esc_value}|g" /srv/app/src/ckan/test-core.ini  
                   else
@@ -303,28 +332,32 @@ jobs:
                   ;;
               esac
             done < "$ADD_FILE"
-            # If there are missing lines, insert them after the first [app:main] header, or append the section
+            
+            # If there are missing lines, insert them after the first [app:main] header
             if [ -s "$MISSING_ADD_FILE" ]; then
               awk -v addfile="$MISSING_ADD_FILE" '
-                BEGIN{
+                BEGIN {
                   inserted=0
                   while ((getline line < addfile) > 0) { add[++na]=line }
                   close(addfile)
                 }
                 {
                   print
-                  if(!inserted && $0=="[app:main]") {
-                    for(i=1;i<=na;i++) print add[i]
+                  if (!inserted && $0 == "[app:main]") {
+                    for (i=1; i<=na; i++) print add[i]
                     inserted=1
                   }
                 }
-                END{
-                  if(!inserted){
+                END {
+                  if (!inserted) {
                     print "[app:main]"
-                    for(i=1;i<=na;i++) print add[i]
+                    for (i=1; i<=na; i++) print add[i]
                   }
-                }' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.new && mv /srv/app/src/ckan/test-core.ini.new /srv/app/src/ckan/test-core.ini
+                }
+              ' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.new && \
+                mv /srv/app/src/ckan/test-core.ini.new /srv/app/src/ckan/test-core.ini
             fi
+            
             # Final defensive catch: ensure sqlalchemy and datastore URLs reflect env (again)
             sed -i "s|^sqlalchemy.url.*|sqlalchemy.url = ${CKAN_SQLALCHEMY_URL}|g" /srv/app/src/ckan/test-core.ini  
             sed -i "s|^ckan.datastore.write_url.*|ckan.datastore.write_url = ${CKAN_DATASTORE_WRITE_URL}|g" /srv/app/src/ckan/test-core.ini  
@@ -332,6 +365,7 @@ jobs:
           else
             echo "/srv/app/src/ckan/test-core.ini not found — no selective patching performed."
           fi
+          
           # Append datapusher plugin(s) to ckan.plugins if present; otherwise add a plugins line
           REQUIRED_PLUGINS="datastore datapusher_plus scheming_datasets"
           if grep -q "^ckan.plugins" /srv/app/src/ckan/test-core.ini; then
@@ -340,14 +374,29 @@ jobs:
             for p in $REQUIRED_PLUGINS; do
               echo "$current" | grep -qw "$p" || current="$current $p"
             done
-            awk -v new="ckan.plugins = $current" 'BEGIN{done=0} {if(!done && $1=="ckan.plugins") {print new; done=1} else print $0}' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.new && mv /srv/app/src/ckan/test-core.ini.new /srv/app/src/ckan/test-core.ini
+            awk -v new="ckan.plugins = $current" '
+              BEGIN { done=0 }
+              {
+                if (!done && $1 == "ckan.plugins") {
+                  print new
+                  done=1
+                } else {
+                  print $0
+                }
+              }
+            ' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.new && \
+              mv /srv/app/src/ckan/test-core.ini.new /srv/app/src/ckan/test-core.ini
           else
             echo "ckan.plugins = $REQUIRED_PLUGINS" >> /srv/app/src/ckan/test-core.ini
             echo "Added ckan.plugins line with required plugins."
           fi
+          
+          # Cleanup temp files
+          rm -f "$REPLACE_FILE" "$ADD_FILE" "$MISSING_ADD_FILE"
+          
           echo "---- /srv/app/src/ckan/test-core.ini (cat) ----"
           cat /srv/app/src/ckan/test-core.ini  
-          echo "---- end ----"
+          echo "----
       - name: Initialize CKAN database
         run: |
           
