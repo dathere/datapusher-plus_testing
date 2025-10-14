@@ -120,6 +120,54 @@ jobs:
           pip install -e "git+https://github.com/dathere/datapusher-plus.git@$DATAPUSHER_BRANCH#egg=datapusher-plus"  
           pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'  
           echo "Installed ckanapi and datapusher-plus (best-effort)"
+
+      - name: Diagnose Python and build environment
+        run: |
+          set -eu
+          echo "==================================="
+          echo "ENVIRONMENT DIAGNOSTICS"
+          echo "==================================="
+          
+          echo "--- Python Version ---"
+          python3 --version
+          python3 -c 'import sys; print(f"Version tuple: {sys.version_info}")'
+          
+          echo ""
+          echo "--- pip Version ---"
+          pip --version
+          
+          echo ""
+          echo "--- setuptools Version ---"
+          python3 -c "import setuptools; print(f'setuptools: {setuptools.__version__}')" || echo "setuptools import failed"
+          
+          echo ""
+          echo "--- Python 3.10+ Check ---"
+          if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+            echo "✓ Python >=3.10: PASS"
+          else
+            echo "✗ Python >=3.10: FAIL - datapusher-plus 2.0.0 WILL NOT INSTALL"
+            echo ""
+            echo "SOLUTION OPTIONS:"
+            echo "1. Use a CKAN container with Python 3.10+"
+            echo "2. Pin datapusher-plus to version <2.0.0"
+            echo "3. Request datapusher-plus to lower Python requirement"
+          fi
+          
+          echo ""
+          echo "--- setuptools 62.6.0+ Check ---"
+          python3 -c "
+          import setuptools
+          from packaging import version
+          current = version.parse(setuptools.__version__)
+          required = version.parse('62.6.0')
+          if current >= required:
+              print(f'✓ setuptools >={required}: PASS (have {current})')
+          else:
+              print(f'✗ setuptools >={required}: FAIL (have {current})')
+              print('  pip will attempt to upgrade in isolated build env')
+          " || echo "Could not check setuptools version"
+
+          
       - name: Install qsv (musl static)
         run: |
           set -eu
