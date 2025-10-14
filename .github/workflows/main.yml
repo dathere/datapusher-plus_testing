@@ -99,60 +99,26 @@ jobs:
       - name: Install requirements, ckanapi and datapusher-plus
         run: |
           set -eu
-          
-          # Check which Python we're using
-          echo "Using Python: $(which python3)"
-          python3 --version
-          
-          # Upgrade pip and build tools with EXPLICIT minimum versions
-          python3 -m pip install --upgrade "pip>=23.0" "setuptools>=65.0" "wheel>=0.38"
-          
+          # Use pip from the container (image usually has Python/pip)
+          python3 -m pip install --upgrade pip setuptools wheel  
           if [ -f requirements.txt ]; then
-            python3 -m pip install -r requirements.txt  
+            pip install -r requirements.txt  
           fi
           if [ -f requirements-dev.txt ]; then
-            python3 -m pip install -r requirements-dev.txt  
+            pip install -r requirements-dev.txt  
           fi
-          
           # install current repo editable if present
           if [ -f setup.py ] || [ -f pyproject.toml ]; then
-            python3 -m pip install -e .  
+            pip install -e .  
           fi
-          
-          # Ensure ckanapi and datapusher-plus dependencies are available
-          python3 -m pip install --upgrade ckanapi datasize
-          
-          # Install system dependencies INCLUDING GDAL for geospatial support
-          apt-get update && apt-get install -y --no-install-recommends \
-            build-essential \
-            libxslt1-dev \
-            libxml2-dev \
-            zlib1g-dev \
-            git \
-            libffi-dev \
-            libpq-dev \
-            uchardet \
-            unzip \
-            libgdal-dev \
-            gdal-bin \
-            python3-dev \
-            && rm -rf /var/lib/apt/lists/*
-          
-          # Install geospatial Python packages required by datapusher-plus
-          echo "Installing geospatial Python packages..."
-          python3 -m pip install --no-cache-dir fiona shapely pyproj
-          
-          # CRITICAL: Install pandas - required by datapusher-plus spatial_helpers
-          echo "Installing pandas (required by datapusher-plus)..."
-          python3 -m pip install --no-cache-dir pandas
-          
-          # Install datapusher-plus package (NON-EDITABLE install to avoid build issues)
+          # Ensure ckanapi and datapusher-plus are available
+          pip install --upgrade ckanapi
+          pip install datasize
+          apt install -y python3-virtualenv python3-dev python3-pip python3-wheel build-essential libxslt1-dev libxml2-dev zlib1g-dev git libffi-dev libpq-dev uchardet unzip  
+          # Install datapusher-plus package (the pip package name is typically datapusher-plus)
           echo "Installing datapusher-plus from branch: $DATAPUSHER_BRANCH"
-          python3 -m pip install --upgrade "setuptools>=65.0"
-          python3 -m pip install --no-cache-dir "git+https://github.com/dathere/datapusher-plus.git@$DATAPUSHER_BRANCH"
-          
-          # Install ckanext-scheming (keep as editable since it's stable)
-          python3 -m pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'  
+          pip install -e "git+https://github.com/dathere/datapusher-plus.git@$DATAPUSHER_BRANCH#egg=datapusher-plus"  
+          pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'  
           echo "Installed ckanapi and datapusher-plus (best-effort)"
       - name: Install qsv (musl static)
         run: |
@@ -185,27 +151,23 @@ jobs:
       - name: Setup CKAN configuration (/srv/app/src/ckan/test-core.ini)
         run: |
           set -eu
-          
           # Defensive URL substitutions (keep these)
-          sed -i "s|^sqlalchemy.url.*|sqlalchemy.url = ${CKAN_SQLALCHEMY_URL:-postgresql://ckan_default:pass@postgres/ckan_test}|g" /srv/app/src/ckan/test-core.ini  
-          sed -i "s|^ckan.datastore.write_url.*|ckan.datastore.write_url = ${CKAN_DATASTORE_WRITE_URL:-postgresql://ckan_default:pass@postgres/datastore_test}|g" /srv/app/src/ckan/test-core.ini  
-          sed -i "s|^ckan.datastore.read_url.*|ckan.datastore.read_url = ${CKAN_DATASTORE_READ_URL:-postgresql://datastore_default:pass@postgres/datastore_test}|g" /srv/app/src/ckan/test-core.ini  
-          
+          sed -i "s|^sqlalchemy.url.*|sqlalchemy.url = ${CKAN_SQLALCHEMY_URL:-***postgres/ckan_test}|g" /srv/app/src/ckan/test-core.ini  
+          sed -i "s|^ckan.datastore.write_url.*|ckan.datastore.write_url = ${CKAN_DATASTORE_WRITE_URL:-***postgres/datastore_test}|g" /srv/app/src/ckan/test-core.ini  
+          sed -i "s|^ckan.datastore.read_url.*|ckan.datastore.read_url = ${CKAN_DATASTORE_READ_URL:-***postgres/datastore_test}|g" /srv/app/src/ckan/test-core.ini  
           if ! grep -q "^solr_url" /srv/app/src/ckan/test-core.ini; then
             echo "solr_url = ${CKAN_SOLR_URL:-http://solr:8983/solr/ckan}" >> /srv/app/src/ckan/test-core.ini
           fi
           if ! grep -q "^ckan.redis.url" /srv/app/src/ckan/test-core.ini; then
             echo "ckan.redis.url = ${CKAN_REDIS_URL:-redis://redis:6379/1}" >> /srv/app/src/ckan/test-core.ini
           fi
-          
           # Desired values (use env vars when present, otherwise fall back)
           CKAN_SITE_URL="${CKAN_SITE_URL:-http://localhost:5000}"
-          CKAN_SQLALCHEMY_URL="${CKAN_SQLALCHEMY_URL:-postgresql://ckan_default:pass@postgres/ckan_test}"
-          CKAN_DATASTORE_WRITE_URL="${CKAN_DATASTORE_WRITE_URL:-postgresql://ckan_default:pass@postgres/datastore_test}"
-          CKAN_DATASTORE_READ_URL="${CKAN_DATASTORE_READ_URL:-postgresql://datastore_default:pass@postgres/datastore_test}"
+          CKAN_SQLALCHEMY_URL="${CKAN_SQLALCHEMY_URL:-***postgres/ckan_test}"
+          CKAN_DATASTORE_WRITE_URL="${CKAN_DATASTORE_WRITE_URL:-***postgres/datastore_test}"
+          CKAN_DATASTORE_READ_URL="${CKAN_DATASTORE_READ_URL:-***postgres/datastore_test}"
           CKAN_SOLR_URL="${CKAN_SOLR_URL:-http://solr:8983/solr/ckan}"
           CKAN_REDIS_URL="${CKAN_REDIS_URL:-redis://redis:6379/1}"
-          
           # create temp files to hold lists (POSIX sh-safe)
           REPLACE_FILE="$(mktemp)"
           ADD_FILE="$(mktemp)"
@@ -213,7 +175,6 @@ jobs:
           : > "$REPLACE_FILE"
           : > "$ADD_FILE"
           : > "$MISSING_ADD_FILE"
-          
           # REPLACE_ENTRIES (key|value) - write expanded lines to REPLACE_FILE
           printf '%s\n' \
             "ckan.site_url|${CKAN_SITE_URL}" \
@@ -223,7 +184,6 @@ jobs:
             "solr_url|${CKAN_SOLR_URL}" \
             "ckan.redis.url|${CKAN_REDIS_URL}" \
             > "$REPLACE_FILE"
-          
           # ADD_LINES content (one entry per line). Comments start with '#'
           cat > "$ADD_FILE" <<'EOF'
           ckan.site_id = default
@@ -236,6 +196,7 @@ jobs:
           ckanext.datapusher_plus.use_proxy = false
           ckanext.datapusher_plus.download_proxy = 
           ckanext.datapusher_plus.ssl_verify = false
+          # supports INFO, DEBUG, TRACE - use DEBUG or TRACE when debugging scheming Formulas
           ckanext.datapusher_plus.upload_log_level = INFO
           ckanext.datapusher_plus.formats = csv tsv tab ssv xls xlsx xlsxb xlsm ods geojson shp qgis zip
           ckanext.datapusher_plus.pii_screening = false
@@ -271,48 +232,39 @@ jobs:
           ckanext.datapusher_plus.spatial_simplication_relative_tolerance = 0.1
           ckanext.datapusher_plus.latitude_fields = latitude,lat
           ckanext.datapusher_plus.longitude_fields = longitude,long,lon
-          ckanext.datapusher_plus.jinja2_bytecode_cache_dir = /tmp/jinja2_bytecode_cache
+          ckanext.datapusher_plus.jinja2_bytecode_cache_dir = /tmp/jinja2_butecode_cache
           ckanext.datapusher_plus.auto_unzip_one_file = true
           EOF
-          
           if [ -f /srv/app/src/ckan/test-core.ini ]; then
             echo "Patching selective keys in /srv/app/src/ckan/test-core.ini (only the keys you listed)..."
-            
-            # Ensure single debug = true under [DEFAULT] - FIXED AWK SYNTAX
-            awk '
-              BEGIN { in_default=0 }
-              /^\[DEFAULT\]/ { print; in_default=1; next }
-              /^\[.*\]/ { 
-                if (in_default) { 
-                  print "debug = true"
-                  in_default=0 
-                }
-                print
-                next
-              }
+            # Ensure single debug = true under [DEFAULT]: remove existing debug lines in DEFAULT then add one
+            awk 'BEGIN{in=0}
+              /^\[DEFAULT\]/{ print; in=1; next }
+              /^\[.*\]/{ if(in){ print "debug = true"; in=0 } }
               {
-                if (in_default && $1 == "debug") next
-                print
+                if(in){
+                  if($1 == "debug") next
+                  print
+                } else {
+                  print
+                }
               }
-              END { if (in_default) print "debug = true" }
-            ' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.tmp && \
-              mv /srv/app/src/ckan/test-core.ini.tmp /srv/app/src/ckan/test-core.ini
-            
+              END { if(in) print "debug = true" }' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.tmp && mv /srv/app/src/ckan/test-core.ini.tmp /srv/app/src/ckan/test-core.ini
             # Process REPLACE_FILE: replace if present, otherwise write to missing file
             while IFS= read -r entry || [ -n "$entry" ]; do
               key="$(printf '%s' "$entry" | cut -d'|' -f1)"
               value="$(printf '%s' "$entry" | cut -d'|' -f2-)"
+              # escape backslashes and ampersands for sed replacement
               esc_value="$(printf '%s' "$value" | sed -e 's/[\/&]/\\&/g')"
-              
               if grep -q -E "^[[:space:]]*$(printf '%s' "$key" | sed 's/[][^$.*/]/\\&/g')[[:space:]]*=" /srv/app/src/ckan/test-core.ini; then
                 sed -i -E "s|^[[:space:]]*$(printf '%s' "$key" | sed 's/[][^$.*/]/\\&/g')[[:space:]]*=.*|${key} = ${esc_value}|g" /srv/app/src/ckan/test-core.ini  
               else
                 printf '%s\n' "${key} = ${value}" >> "$MISSING_ADD_FILE"
               fi
             done < "$REPLACE_FILE"
-            
             # Process ADD_FILE: replace if present, otherwise collect to missing file
             while IFS= read -r ln || [ -n "$ln" ]; do
+              # comment lines - check if exact comment exists
               case "$ln" in
                 \#*)
                   if ! grep -Fq "$ln" /srv/app/src/ckan/test-core.ini; then
@@ -323,7 +275,6 @@ jobs:
                   key="$(printf '%s' "$ln" | cut -d'=' -f1 | sed 's/[[:space:]]*$//')"
                   value="$(printf '%s' "$ln" | cut -d'=' -f2- | sed 's/^[[:space:]]*//')"
                   esc_value="$(printf '%s' "$value" | sed -e 's/[\/&]/\\&/g')"
-                  
                   if grep -q -E "^[[:space:]]*$(printf '%s' "$key" | sed 's/[][^$.*/]/\\&/g')[[:space:]]*=" /srv/app/src/ckan/test-core.ini; then
                     sed -i -E "s|^[[:space:]]*$(printf '%s' "$key" | sed 's/[][^$.*/]/\\&/g')[[:space:]]*=.*|${key} = ${esc_value}|g" /srv/app/src/ckan/test-core.ini  
                   else
@@ -332,32 +283,28 @@ jobs:
                   ;;
               esac
             done < "$ADD_FILE"
-            
-            # If there are missing lines, insert them after the first [app:main] header
+            # If there are missing lines, insert them after the first [app:main] header, or append the section
             if [ -s "$MISSING_ADD_FILE" ]; then
               awk -v addfile="$MISSING_ADD_FILE" '
-                BEGIN {
+                BEGIN{
                   inserted=0
                   while ((getline line < addfile) > 0) { add[++na]=line }
                   close(addfile)
                 }
                 {
                   print
-                  if (!inserted && $0 == "[app:main]") {
-                    for (i=1; i<=na; i++) print add[i]
+                  if(!inserted && $0=="[app:main]") {
+                    for(i=1;i<=na;i++) print add[i]
                     inserted=1
                   }
                 }
-                END {
-                  if (!inserted) {
+                END{
+                  if(!inserted){
                     print "[app:main]"
-                    for (i=1; i<=na; i++) print add[i]
+                    for(i=1;i<=na;i++) print add[i]
                   }
-                }
-              ' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.new && \
-                mv /srv/app/src/ckan/test-core.ini.new /srv/app/src/ckan/test-core.ini
+                }' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.new && mv /srv/app/src/ckan/test-core.ini.new /srv/app/src/ckan/test-core.ini
             fi
-            
             # Final defensive catch: ensure sqlalchemy and datastore URLs reflect env (again)
             sed -i "s|^sqlalchemy.url.*|sqlalchemy.url = ${CKAN_SQLALCHEMY_URL}|g" /srv/app/src/ckan/test-core.ini  
             sed -i "s|^ckan.datastore.write_url.*|ckan.datastore.write_url = ${CKAN_DATASTORE_WRITE_URL}|g" /srv/app/src/ckan/test-core.ini  
@@ -365,7 +312,6 @@ jobs:
           else
             echo "/srv/app/src/ckan/test-core.ini not found — no selective patching performed."
           fi
-          
           # Append datapusher plugin(s) to ckan.plugins if present; otherwise add a plugins line
           REQUIRED_PLUGINS="datastore datapusher_plus scheming_datasets"
           if grep -q "^ckan.plugins" /srv/app/src/ckan/test-core.ini; then
@@ -374,25 +320,11 @@ jobs:
             for p in $REQUIRED_PLUGINS; do
               echo "$current" | grep -qw "$p" || current="$current $p"
             done
-            awk -v new="ckan.plugins = $current" '
-              BEGIN { done=0 }
-              {
-                if (!done && $1 == "ckan.plugins") {
-                  print new
-                  done=1
-                } else {
-                  print $0
-                }
-              }
-            ' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.new && \
-              mv /srv/app/src/ckan/test-core.ini.new /srv/app/src/ckan/test-core.ini
+            awk -v new="ckan.plugins = $current" 'BEGIN{done=0} {if(!done && $1=="ckan.plugins") {print new; done=1} else print $0}' /srv/app/src/ckan/test-core.ini > /srv/app/src/ckan/test-core.ini.new && mv /srv/app/src/ckan/test-core.ini.new /srv/app/src/ckan/test-core.ini
           else
             echo "ckan.plugins = $REQUIRED_PLUGINS" >> /srv/app/src/ckan/test-core.ini
             echo "Added ckan.plugins line with required plugins."
           fi
-          
-          rm -f "$REPLACE_FILE" "$ADD_FILE" "$MISSING_ADD_FILE"
-          
           echo "---- /srv/app/src/ckan/test-core.ini (cat) ----"
           cat /srv/app/src/ckan/test-core.ini  
           echo "---- end ----"
@@ -1031,7 +963,8 @@ jobs:
           echo ""
           echo "Test completed at: $(date)"
 
-      - name: Generate combined test results and worker analysis
+      - name: Generate Combined Test Results and Worker Analysis
+        if: always()
         run: |
           set -eu
           echo "=== Generating Combined Test Results and Worker Analysis ==="
@@ -1042,7 +975,7 @@ jobs:
           # Check if worker log exists
           if [ ! -f /tmp/ckan_worker.log ]; then
             echo "No worker log file found at /tmp/ckan_worker.log"
-            # Create comprehensive header structure
+            # Create comprehensive header structure with all new fields including enhanced analytics
             echo "timestamp,job_id,file_name,status,qsv_version,file_format,encoding,normalized,valid_csv,sorted,db_safe_headers,analysis,records,total_time,download_time,analysis_time,copying_time,indexing_time,formulae_time,metadata_time,rows_copied,columns_indexed,error_type,error_message,data_quality_score,processing_efficiency" > /tmp/worker_analysis.csv
           else
             echo "Worker log file size: $(du -h /tmp/ckan_worker.log | cut -f1)"
@@ -1074,32 +1007,23 @@ jobs:
           # Process test results if available
           if [ -f /tmp/test_results.csv ]; then
             # Count total results
-            total_lines=$(wc -l < /tmp/test_results.csv | tr -d ' \n')
+            total_lines=$(wc -l < /tmp/test_results.csv)
             total_tests=$((total_lines - 1))  # Subtract header line
             
             # Count skipped files
             if [ -f /tmp/skipped_files.csv ]; then
-              skipped_lines=$(wc -l < /tmp/skipped_files.csv | tr -d ' \n')
+              skipped_lines=$(wc -l < /tmp/skipped_files.csv)
               skipped_count=$((skipped_lines - 1))  # Subtract header line
             fi
             
             total_files_in_dir=$((total_tests + skipped_count))
             
             if [ $total_tests -gt 0 ]; then
-              # Count results by status - CLEAN ALL NUMBERS
+              # Count results by status
               passed=$(grep -c ",SUCCESS,.*,complete,true," /tmp/test_results.csv 2>/dev/null || echo "0")
-              passed=$(echo "$passed" | tr -d ' \n')
-              
               failed=$(tail -n +2 /tmp/test_results.csv | grep -v ",SUCCESS,.*,complete,true," | wc -l)
-              failed=$(echo "$failed" | tr -d ' \n')
-              
               error_count=$(grep -c ",error," /tmp/test_results.csv 2>/dev/null || echo "0")
-              error_count=$(echo "$error_count" | tr -d ' \n')
-              
-              # Ensure variables are integers (default to 0 if empty)
-              passed=${passed:-0}
-              failed=${failed:-0}
-              error_count=${error_count:-0}
+              error_count=$(echo "$error_count" | tr -d '\n')
               
               # Calculate success rates
               tested_success_rate=$(( passed * 100 / total_tests ))
@@ -1150,9 +1074,7 @@ jobs:
             
             # Show worker analysis table if available
             if [ "$worker_analysis_available" = true ]; then
-              total_jobs=$(tail -n +2 /tmp/worker_analysis.csv | wc -l | tr -d ' \n')
-              total_jobs=${total_jobs:-0}
-              
+              total_jobs=$(tail -n +2 /tmp/worker_analysis.csv | wc -l)
               if [ $total_jobs -gt 0 ]; then
                 echo "## Complete Job Analysis"
                 echo ""
@@ -1187,13 +1109,8 @@ jobs:
                 echo ""
                 
                 # Add worker analysis sections
-                success_jobs=$(grep -c ",SUCCESS," /tmp/worker_analysis.csv 2>/dev/null || echo "0")
-                success_jobs=$(echo "$success_jobs" | tr -d ' \n')
-                success_jobs=${success_jobs:-0}
-                
-                error_jobs=$(grep -c ",ERROR," /tmp/worker_analysis.csv 2>/dev/null || echo "0")
-                error_jobs=$(echo "$error_jobs" | tr -d ' \n')
-                error_jobs=${error_jobs:-0}
+                success_jobs=$(grep -c ",SUCCESS," /tmp/worker_analysis.csv || echo "0")
+                error_jobs=$(grep -c ",ERROR," /tmp/worker_analysis.csv || echo "0")
                 
                 # File Analysis
                 echo "## File Analysis"
@@ -1208,9 +1125,7 @@ jobs:
                     echo "| Format | Files | Percentage |"
                     echo "|--------|-------|------------|"
                     echo "$formats" | while read count format; do
-                      count=$(echo "$count" | tr -d ' \n')
-                      count=${count:-0}
-                      percentage=$(( count * 100 / success_jobs ))
+                      percentage=$((count * 100 / success_jobs))
                       # Add format icon
                       case "$format" in
                         "CSV") format_icon="📊" ;;
@@ -1257,6 +1172,7 @@ jobs:
                 if [ $error_jobs -gt 0 ]; then
                   echo "### Failed Files Details"
                   echo ""
+                  echo ""
                   echo "| File | Error Type | Error Message |"
                   echo "|------|------------|---------------|"
                   tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | cut -d',' -f3,23,24 | while IFS=',' read file error_type error_msg; do
@@ -1285,9 +1201,9 @@ jobs:
               fi
             fi
             
-            # Add comprehensive analysis based on results
+            # Add comprehensive analysis based on results (keep original logic)
             if [ $total_tests -eq 0 ] && [ $skipped_count -gt 0 ]; then
-              echo "## No Testable Files ⚠️"
+              echo "##  No Testable Files ⚠️"
               echo ""
               echo "All files in the test directory were skipped."
               echo ""
@@ -1299,12 +1215,12 @@ jobs:
               echo "**Recommendation:** Add supported data files to test directory."
               
             elif [ $total_tests -eq 0 ]; then
-              echo "## No Files Found ❌"
+              echo "##  No Files Found ❌"
               echo ""
               echo "No files found in test directory to test."
               
             elif [ $passed -eq $total_tests ]; then
-              echo "## All Tested Files Passed! 🎉"
+              echo "##  All Tested Files Passed! 🎉"
               echo ""
               echo "DataPusher Plus is working correctly with all testable files."
               if [ $skipped_count -gt 0 ]; then
@@ -1357,6 +1273,7 @@ jobs:
           echo "Preview of generated summary:"
           echo "=================================="
           cat /tmp/combined_summary.md
+
       - name: Upload test results as artifact
         uses: actions/upload-artifact@v4
         if: always()
