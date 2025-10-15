@@ -100,7 +100,7 @@ jobs:
         run: |
           set -eu
           
-          # Install system dependencies first (including GDAL)
+          # Install system dependencies first (including GDAL and GEOS for shapely)
           apt-get update
           apt-get install -y \
             python3-virtualenv \
@@ -118,7 +118,8 @@ jobs:
             unzip \
             gdal-bin \
             libgdal-dev \
-            libspatialindex-dev
+            libspatialindex-dev \
+            libgeos-dev
           
           # Get GDAL version for Python bindings
           export GDAL_VERSION=$(gdal-config --version)
@@ -131,11 +132,13 @@ jobs:
           # Upgrade pip and build tools
           python3 -m pip install --upgrade pip setuptools wheel
           
-          # Install GDAL Python bindings matching system GDAL version
+          # Install geospatial stack in order
           pip install "GDAL==$GDAL_VERSION"
-          
-          # Install Fiona (depends on GDAL)
+          pip install shapely
           pip install fiona
+          
+          # Install pandas and other common data dependencies
+          pip install pandas numpy
           
           # Install project requirements if they exist
           if [ -f requirements.txt ]; then
@@ -153,7 +156,7 @@ jobs:
           
           # Install core dependencies
           pip install --upgrade ckanapi
-          pip install datasize pandas numpy
+          pip install datasize
           
           # Clone and install datapusher-plus manually to ensure all dependencies
           echo "Cloning datapusher-plus from branch: $DATAPUSHER_BRANCH"
@@ -171,7 +174,7 @@ jobs:
           # Install ckanext-scheming
           pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'
           
-          echo "Installation complete: GDAL, Fiona, pandas, ckanapi, datapusher-plus, and ckanext-scheming"
+          echo "Installation complete: GDAL, Shapely, Fiona, pandas, ckanapi, datapusher-plus, and ckanext-scheming"
       - name: Install qsv (musl static)
         run: |
           set -eu
