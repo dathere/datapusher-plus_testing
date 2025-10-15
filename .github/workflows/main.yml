@@ -121,88 +121,7 @@ jobs:
           pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'  
           echo "Installed ckanapi and datapusher-plus (best-effort)"
 
-      - name: Comprehensive datapusher-plus diagnostic
-        if: always()
-        run: |
-          set -eu
-          echo "=========================================="
-          echo "DATAPUSHER-PLUS INSTALLATION DIAGNOSTIC"
-          echo "=========================================="
-          
-          echo ""
-          echo "1. Package Installation Status"
-          echo "----------------------------"
-          if pip show datapusher-plus; then
-            echo "✓ Package is installed"
-          else
-            echo "✗ Package is NOT installed"
-            exit 1
-          fi
-          
-          echo ""
-          echo "2. Module Import Test"
-          echo "----------------------------"
-          python3 -c "import ckanext.datapusher_plus; print(f'✓ Module imports: {ckanext.datapusher_plus.__file__}')" || {
-            echo "✗ Cannot import module"
-            exit 1
-          }
-          
-          echo ""
-          echo "3. Plugin Class Import Test"
-          echo "----------------------------"
-          python3 -c "from ckanext.datapusher_plus.plugin import DatapusherPlusPlugin; print('✓ Plugin class imports')" || {
-            echo "✗ Cannot import plugin class"
-            exit 1
-          }
-          
-          echo ""
-          echo "4. Entry Point Verification"
-          echo "----------------------------"
-          python3 -c "
-          from pkg_resources import iter_entry_points
-          found = False
-          for ep in iter_entry_points('ckan.plugins'):
-              if 'datapusher' in ep.name:
-                  print(f'✓ Entry point: {ep.name}')
-                  found = True
-          if not found:
-              print('✗ No entry point found')
-              exit(1)
-          "
-          
-          echo ""
-          echo "5. Schema File Location"
-          echo "----------------------------"
-          python3 -c "
-          import ckanext.datapusher_plus
-          import os
-          pkg_dir = os.path.dirname(ckanext.datapusher_plus.__file__)
-          schema_file = os.path.join(pkg_dir, 'dataset-druf.yaml')
-          if os.path.exists(schema_file):
-              print(f'✓ Schema file exists: {schema_file}')
-          else:
-              print(f'✗ Schema file NOT found: {schema_file}')
-              print('Available YAML files:')
-              for root, dirs, files in os.walk(pkg_dir):
-                  for f in files:
-                      if f.endswith(('.yaml', '.yml')):
-                          print(f'  {os.path.relpath(os.path.join(root, f), pkg_dir)}')
-          "
-          
-          echo ""
-          echo "6. Dependency Check"
-          echo "----------------------------"
-          pip check && echo "✓ No dependency conflicts" || echo "✗ Dependency conflicts exist"
-          
-          echo ""
-          echo "7. Installed Files"
-          echo "----------------------------"
-          pip show -f datapusher-plus | head -30
-          
-          echo ""
-          echo "=========================================="
-          echo "DIAGNOSTIC COMPLETE"
-          echo "=========================================="
+
           
       - name: Install qsv (musl static)
         run: |
@@ -433,6 +352,89 @@ jobs:
           else
             echo "Datastore permission step returned non-zero; continuing."
           fi
+
+      - name: Comprehensive datapusher-plus diagnostic
+        if: always()
+        run: |
+          set -eu
+          echo "=========================================="
+          echo "DATAPUSHER-PLUS INSTALLATION DIAGNOSTIC"
+          echo "=========================================="
+          
+          echo ""
+          echo "1. Package Installation Status"
+          echo "----------------------------"
+          if pip show datapusher-plus; then
+            echo "✓ Package is installed"
+          else
+            echo "✗ Package is NOT installed"
+            exit 1
+          fi
+          
+          echo ""
+          echo "2. Module Import Test"
+          echo "----------------------------"
+          python3 -c "import ckanext.datapusher_plus; print(f'✓ Module imports: {ckanext.datapusher_plus.__file__}')" || {
+            echo "✗ Cannot import module"
+            exit 1
+          }
+          
+          echo ""
+          echo "3. Plugin Class Import Test"
+          echo "----------------------------"
+          python3 -c "from ckanext.datapusher_plus.plugin import DatapusherPlusPlugin; print('✓ Plugin class imports')" || {
+            echo "✗ Cannot import plugin class"
+            exit 1
+          }
+          
+          echo ""
+          echo "4. Entry Point Verification"
+          echo "----------------------------"
+          python3 -c "
+          from pkg_resources import iter_entry_points
+          found = False
+          for ep in iter_entry_points('ckan.plugins'):
+              if 'datapusher' in ep.name:
+                  print(f'✓ Entry point: {ep.name}')
+                  found = True
+          if not found:
+              print('✗ No entry point found')
+              exit(1)
+          "
+          
+          echo ""
+          echo "5. Schema File Location"
+          echo "----------------------------"
+          python3 -c "
+          import ckanext.datapusher_plus
+          import os
+          pkg_dir = os.path.dirname(ckanext.datapusher_plus.__file__)
+          schema_file = os.path.join(pkg_dir, 'dataset-druf.yaml')
+          if os.path.exists(schema_file):
+              print(f'✓ Schema file exists: {schema_file}')
+          else:
+              print(f'✗ Schema file NOT found: {schema_file}')
+              print('Available YAML files:')
+              for root, dirs, files in os.walk(pkg_dir):
+                  for f in files:
+                      if f.endswith(('.yaml', '.yml')):
+                          print(f'  {os.path.relpath(os.path.join(root, f), pkg_dir)}')
+          "
+          
+          echo ""
+          echo "6. Dependency Check"
+          echo "----------------------------"
+          pip check && echo "✓ No dependency conflicts" || echo "✗ Dependency conflicts exist"
+          
+          echo ""
+          echo "7. Installed Files"
+          echo "----------------------------"
+          pip show -f datapusher-plus | head -30
+          
+          echo ""
+          echo "=========================================="
+          echo "DIAGNOSTIC COMPLETE"
+          echo "=========================================="
       - name: Start CKAN server
         run: |
           set -eu
