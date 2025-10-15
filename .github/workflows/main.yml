@@ -136,15 +136,6 @@ jobs:
           # Install GDAL Python bindings matching system GDAL version
           pip install "GDAL==$GDAL_VERSION"
           
-          # Install datapusher-plus specific dependencies with exact versions
-          pip install semver==3.0.4
-          pip install datasize==1.0.0
-          pip install "jinja2>=3.1.4"
-          pip install fiona==1.10.1
-          pip install pandas==2.2.3
-          pip install shapely==2.1.0
-          pip install "pyproj>=3.7.1"
-          
           # Install project requirements if they exist
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
@@ -162,19 +153,24 @@ jobs:
           # Install core dependencies
           pip install --upgrade ckanapi
           
-          # Clone and install datapusher-plus manually
+          # Clone datapusher-plus and install its requirements first
           echo "Cloning datapusher-plus from branch: $DATAPUSHER_BRANCH"
           git clone --depth 1 --branch "$DATAPUSHER_BRANCH" https://github.com/dathere/datapusher-plus.git /tmp/datapusher-plus
           
-          # Install from the repository
+          # Install datapusher-plus requirements
           cd /tmp/datapusher-plus
-          pip install -e . --no-deps
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          
+          # Install datapusher-plus itself
+          pip install -e .
           cd -
           
           # Install ckanext-scheming
           pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'
           
-          echo "Installation complete: GDAL, geospatial dependencies, ckanapi, datapusher-plus, and ckanext-scheming"
+          echo "Installation complete: GDAL, ckanapi, datapusher-plus, and ckanext-scheming"
       - name: Install qsv (musl static)
         run: |
           set -eu
