@@ -99,30 +99,52 @@ jobs:
       - name: Install requirements, ckanapi and datapusher-plus
         run: |
           set -eu
-          # Use pip from the container (image usually has Python/pip)
-          python3 -m pip install --upgrade pip setuptools wheel  
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt  
-          fi
-          if [ -f requirements-dev.txt ]; then
-            pip install -r requirements-dev.txt  
-          fi
-          # install current repo editable if present
-          if [ -f setup.py ] || [ -f pyproject.toml ]; then
-            pip install -e .  
-          fi
-          # Ensure ckanapi and datapusher-plus are available
-          pip install --upgrade ckanapi
-          pip install datasize
-          apt install -y python3-virtualenv python3-dev python3-pip python3-wheel build-essential libxslt1-dev libxml2-dev zlib1g-dev git libffi-dev libpq-dev uchardet unzip  
-          # Install datapusher-plus package (the pip package name is typically datapusher-plus)
-          echo "Installing datapusher-plus from branch: $DATAPUSHER_BRANCH"
-          pip install -e "git+https://github.com/dathere/datapusher-plus.git@$DATAPUSHER_BRANCH#egg=datapusher-plus"  
-          pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'  
-          echo "Installed ckanapi and datapusher-plus (best-effort)"
-
-
           
+          # Install system dependencies first
+          apt-get update
+          apt-get install -y \
+            python3-virtualenv \
+            python3-dev \
+            python3-pip \
+            python3-wheel \
+            build-essential \
+            libxslt1-dev \
+            libxml2-dev \
+            libffi-dev \
+            libpq-dev \
+            zlib1g-dev \
+            git \
+            uchardet \
+            unzip
+          
+          # Upgrade pip and build tools
+          python3 -m pip install --upgrade pip setuptools wheel
+          
+          # Install project requirements if they exist
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          fi
+          
+          # Install current repo in editable mode if setup files exist
+          if [ -f setup.py ] || [ -f pyproject.toml ]; then
+            pip install -e .
+          fi
+          
+          # Install core dependencies
+          pip install --upgrade ckanapi
+          
+          # Install datapusher-plus from specified branch
+          echo "Installing datapusher-plus from branch: $DATAPUSHER_BRANCH"
+          pip install -e "git+https://github.com/dathere/datapusher-plus.git@$DATAPUSHER_BRANCH#egg=datapusher-plus"
+          
+          # Install ckanext-scheming
+          pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'
+          
+          echo "Installation complete: ckanapi, datapusher-plus, and ckanext-scheming"
       - name: Install qsv (musl static)
         run: |
           set -eu
@@ -331,32 +353,6 @@ jobs:
           echo "---- /srv/app/src/ckan/test-core.ini (cat) ----"
           cat /srv/app/src/ckan/test-core.ini  
           echo "---- end ----"
-
-
-      - name: Pre-initialize datapusher_plus config to prevent Path(None) error
-        run: |
-          set -eu
-          echo "=== Ensuring qsv_bin is set before plugin loads ==="
-          
-          # Detect qsv binary
-          if [ -f /usr/local/bin/qsvdp ]; then
-            QSV_BIN="/usr/local/bin/qsvdp"
-          elif [ -f /usr/local/bin/qsv ]; then
-            QSV_BIN="/usr/local/bin/qsv"
-          else
-            QSV_BIN="/usr/local/bin/qsv"
-          fi
-          
-          # Ensure it's in config
-          if ! grep -q "^ckanext.datapusher_plus.qsv_bin" /srv/app/src/ckan/test-core.ini; then
-            echo "Adding qsv_bin to config..."
-            ckan config-tool /srv/app/src/ckan/test-core.ini "ckanext.datapusher_plus.qsv_bin=$QSV_BIN"
-          fi
-          
-          # Verify it's set
-          echo "Current qsv_bin setting:"
-          grep "ckanext.datapusher_plus.qsv_bin" /srv/app/src/ckan/test-core.ini
-                
       - name: Initialize CKAN database
         run: |
           
@@ -378,89 +374,6 @@ jobs:
           else
             echo "Datastore permission step returned non-zero; continuing."
           fi
-
-      - name: Comprehensive datapusher-plus diagnostic
-        if: always()
-        run: |
-          set -eu
-          echo "=========================================="
-          echo "DATAPUSHER-PLUS INSTALLATION DIAGNOSTIC"
-          echo "=========================================="
-          
-          echo ""
-          echo "1. Package Installation Status"
-          echo "----------------------------"
-          if pip show datapusher-plus; then
-            echo "✓ Package is installed"
-          else
-            echo "✗ Package is NOT installed"
-            exit 1
-          fi
-          
-          echo ""
-          echo "2. Module Import Test"
-          echo "----------------------------"
-          python3 -c "import ckanext.datapusher_plus; print(f'✓ Module imports: {ckanext.datapusher_plus.__file__}')" || {
-            echo "✗ Cannot import module"
-            exit 1
-          }
-          
-          echo ""
-          echo "3. Plugin Class Import Test"
-          echo "----------------------------"
-          python3 -c "from ckanext.datapusher_plus.plugin import DatapusherPlusPlugin; print('✓ Plugin class imports')" || {
-            echo "✗ Cannot import plugin class"
-            exit 1
-          }
-          
-          echo ""
-          echo "4. Entry Point Verification"
-          echo "----------------------------"
-          python3 -c "
-          from pkg_resources import iter_entry_points
-          found = False
-          for ep in iter_entry_points('ckan.plugins'):
-              if 'datapusher' in ep.name:
-                  print(f'✓ Entry point: {ep.name}')
-                  found = True
-          if not found:
-              print('✗ No entry point found')
-              exit(1)
-          "
-          
-          echo ""
-          echo "5. Schema File Location"
-          echo "----------------------------"
-          python3 -c "
-          import ckanext.datapusher_plus
-          import os
-          pkg_dir = os.path.dirname(ckanext.datapusher_plus.__file__)
-          schema_file = os.path.join(pkg_dir, 'dataset-druf.yaml')
-          if os.path.exists(schema_file):
-              print(f'✓ Schema file exists: {schema_file}')
-          else:
-              print(f'✗ Schema file NOT found: {schema_file}')
-              print('Available YAML files:')
-              for root, dirs, files in os.walk(pkg_dir):
-                  for f in files:
-                      if f.endswith(('.yaml', '.yml')):
-                          print(f'  {os.path.relpath(os.path.join(root, f), pkg_dir)}')
-          "
-          
-          echo ""
-          echo "6. Dependency Check"
-          echo "----------------------------"
-          pip check && echo "✓ No dependency conflicts" || echo "✗ Dependency conflicts exist"
-          
-          echo ""
-          echo "7. Installed Files"
-          echo "----------------------------"
-          pip show -f datapusher-plus | head -30
-          
-          echo ""
-          echo "=========================================="
-          echo "DIAGNOSTIC COMPLETE"
-          echo "=========================================="
       - name: Start CKAN server
         run: |
           set -eu
