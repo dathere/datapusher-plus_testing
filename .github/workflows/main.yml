@@ -136,10 +136,12 @@ jobs:
           
           # Install core dependencies
           pip install --upgrade ckanapi
+          pip install datasize
           
-          # Install datapusher-plus from specified branch
+          # Install datapusher-plus from specified branch using setup.py
           echo "Installing datapusher-plus from branch: $DATAPUSHER_BRANCH"
-          pip install -e "git+https://github.com/dathere/datapusher-plus.git@$DATAPUSHER_BRANCH#egg=datapusher-plus"
+          pip install --upgrade setuptools
+          pip install -e "git+https://github.com/dathere/datapusher-plus.git@$DATAPUSHER_BRANCH#egg=datapusher-plus&subdirectory=."
           
           # Install ckanext-scheming
           pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'
