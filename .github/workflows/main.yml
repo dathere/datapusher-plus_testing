@@ -100,7 +100,7 @@ jobs:
         run: |
           set -eu
           
-          # Install system dependencies first (including GDAL and GEOS for shapely)
+          # Install system dependencies first (including GDAL and geospatial libraries)
           apt-get update
           apt-get install -y \
             python3-virtualenv \
@@ -119,7 +119,8 @@ jobs:
             gdal-bin \
             libgdal-dev \
             libspatialindex-dev \
-            libgeos-dev
+            libgeos-dev \
+            libproj-dev
           
           # Get GDAL version for Python bindings
           export GDAL_VERSION=$(gdal-config --version)
@@ -132,13 +133,17 @@ jobs:
           # Upgrade pip and build tools
           python3 -m pip install --upgrade pip setuptools wheel
           
-          # Install geospatial stack in order
+          # Install GDAL Python bindings matching system GDAL version
           pip install "GDAL==$GDAL_VERSION"
-          pip install shapely
-          pip install fiona
           
-          # Install pandas and other common data dependencies
-          pip install pandas numpy
+          # Install datapusher-plus specific dependencies with exact versions
+          pip install semver==3.0.4
+          pip install datasize==1.0.0
+          pip install "jinja2>=3.1.4"
+          pip install fiona==1.10.1
+          pip install pandas==2.2.3
+          pip install shapely==2.1.0
+          pip install "pyproj>=3.7.1"
           
           # Install project requirements if they exist
           if [ -f requirements.txt ]; then
@@ -156,25 +161,20 @@ jobs:
           
           # Install core dependencies
           pip install --upgrade ckanapi
-          pip install datasize
           
-          # Clone and install datapusher-plus manually to ensure all dependencies
+          # Clone and install datapusher-plus manually
           echo "Cloning datapusher-plus from branch: $DATAPUSHER_BRANCH"
           git clone --depth 1 --branch "$DATAPUSHER_BRANCH" https://github.com/dathere/datapusher-plus.git /tmp/datapusher-plus
           
-          # Install from setup.py with all dependencies
+          # Install from the repository
           cd /tmp/datapusher-plus
-          if [ -f setup.py ]; then
-            pip install -e .[dev] || pip install -e .
-          else
-            pip install -e .
-          fi
+          pip install -e . --no-deps
           cd -
           
           # Install ckanext-scheming
           pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'
           
-          echo "Installation complete: GDAL, Shapely, Fiona, pandas, ckanapi, datapusher-plus, and ckanext-scheming"
+          echo "Installation complete: GDAL, geospatial dependencies, ckanapi, datapusher-plus, and ckanext-scheming"
       - name: Install qsv (musl static)
         run: |
           set -eu
