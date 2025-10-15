@@ -331,6 +331,32 @@ jobs:
           echo "---- /srv/app/src/ckan/test-core.ini (cat) ----"
           cat /srv/app/src/ckan/test-core.ini  
           echo "---- end ----"
+
+
+      - name: Pre-initialize datapusher_plus config to prevent Path(None) error
+        run: |
+          set -eu
+          echo "=== Ensuring qsv_bin is set before plugin loads ==="
+          
+          # Detect qsv binary
+          if [ -f /usr/local/bin/qsvdp ]; then
+            QSV_BIN="/usr/local/bin/qsvdp"
+          elif [ -f /usr/local/bin/qsv ]; then
+            QSV_BIN="/usr/local/bin/qsv"
+          else
+            QSV_BIN="/usr/local/bin/qsv"
+          fi
+          
+          # Ensure it's in config
+          if ! grep -q "^ckanext.datapusher_plus.qsv_bin" /srv/app/src/ckan/test-core.ini; then
+            echo "Adding qsv_bin to config..."
+            ckan config-tool /srv/app/src/ckan/test-core.ini "ckanext.datapusher_plus.qsv_bin=$QSV_BIN"
+          fi
+          
+          # Verify it's set
+          echo "Current qsv_bin setting:"
+          grep "ckanext.datapusher_plus.qsv_bin" /srv/app/src/ckan/test-core.ini
+                
       - name: Initialize CKAN database
         run: |
           
