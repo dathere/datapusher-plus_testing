@@ -125,12 +125,6 @@ The script automatically classifies errors into categories:
 | `error_type` | String | Classified error type (empty for successful jobs) |
 | `error_message` | String | First JobError message found (quotes escaped) |
 
-#### Calculated Metrics
-| Column | Type | Description |
-|--------|------|-------------|
-| `data_quality_score` | Integer | Composite score (0-100) based on validation results |
-| `processing_efficiency` | Float | Records processed per second |
-
 ### Advanced Analytics Features
 
 #### Data Quality Scoring Algorithm
