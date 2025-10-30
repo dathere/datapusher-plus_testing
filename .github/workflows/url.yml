@@ -1,4 +1,4 @@
-name: Automated DataPusher+ Testing Run
+name: DataPusher+ Testing Run [URL UPLOAD]
 on:
   workflow_dispatch:
 env:
