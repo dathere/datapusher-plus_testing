@@ -1,0 +1,14 @@
+Column,Type,Label,Description,Unit
+OBJECTID,numeric,Object ID,Internally generated feature number,
+PluggingRe,text,Plugging Report,Plugging Report Tracking Number,
+WellType,text,Well Type,The type of well.,
+County,text,County,Texas county where the well is located.,
+WellOwner,text,Well Owner,The name of the well owner.,
+WellStreet,text,Well Street,Street of the well location,
+WellCity,text,Well City,City of the well location,
+WellZipCod,text,Well Zip Code,5 digit zip code of the well location,
+LatitudeDD,numeric,Latitude DD,Latitude of the well site in units of decimal degrees.,decimal degrees
+LongitudeD,numeric,Longitude DD,Longitude of the well site in units of decimal degrees.,decimal degrees
+BoreholeDe,numeric,Borehole Depth,Borehole Depth,ft
+WellReport,text,Well Report,Well Report Tracking Number,
+LocationEr,numeric,Location Error,Location Error,
