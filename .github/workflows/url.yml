@@ -647,7 +647,7 @@ jobs:
           echo "file_name,reason_skipped" > /tmp/skipped_files.csv
           
           # Set path for CSV input file
-          CSV_INPUT_FILE="${GITHUB_WORKSPACE}/tests/$FILES_DIR/base_files.csv"
+          CSV_INPUT_FILE="${GITHUB_WORKSPACE}/tests/custom/base_files.csv"
           
           # Check if CSV input file exists
           if [ ! -f "$CSV_INPUT_FILE" ]; then
