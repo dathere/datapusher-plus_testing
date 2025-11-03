@@ -645,7 +645,6 @@ jobs:
           fi
 
 
-          
       - name: Test DataPusher Plus functionality - Local Files (HTTP Served)
         run: |
           set -eu
@@ -802,11 +801,6 @@ jobs:
           failed_files=0
           skipped_files=0
           
-          # Initialize format-specific counters
-          declare -A format_counts
-          declare -A format_passed
-          declare -A format_failed
-          
           # Process each test file
           while IFS='|' read -r file_name file_url file_format file_mimetype file_desc || [ -n "$file_name" ]; do
             # Skip empty lines and comments
@@ -826,14 +820,6 @@ jobs:
             fi
             
             total_files=$((total_files + 1))
-            
-            # Track format counts
-            if [ -z "${format_counts[$file_format]}" ]; then
-              format_counts[$file_format]=0
-              format_passed[$file_format]=0
-              format_failed[$file_format]=0
-            fi
-            format_counts[$file_format]=$((format_counts[$file_format] + 1))
             
             echo ""
             echo "=========================================="
@@ -975,11 +961,9 @@ jobs:
             # Update counters
             if [ "$upload_status" = "SUCCESS" ] && [ "$datapusher_status" = "complete" ] && [ "$datastore_active" = "true" ]; then
               passed_files=$((passed_files + 1))
-              format_passed[$file_format]=$((format_passed[$file_format] + 1))
               echo "  🎉 PASS: $file_name processed successfully"
             else
               failed_files=$((failed_files + 1))
-              format_failed[$file_format]=$((format_failed[$file_format] + 1))
               echo "  ❌ FAIL: $file_name had issues"
             fi
             
@@ -1017,18 +1001,6 @@ jobs:
           else
             echo "No files were tested"
           fi
-          echo ""
-          
-          echo "=== Results by Format ==="
-          for format in "${!format_counts[@]}"; do
-            total_fmt=${format_counts[$format]}
-            passed_fmt=${format_passed[$format]}
-            failed_fmt=${format_failed[$format]}
-            if [ $total_fmt -gt 0 ]; then
-              success_rate=$(( passed_fmt * 100 / total_fmt ))
-              echo "  $format: $passed_fmt/$total_fmt passed (${success_rate}%)"
-            fi
-          done
           echo ""
           
           echo "=== Detailed Results ==="
