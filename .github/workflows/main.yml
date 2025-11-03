@@ -705,13 +705,13 @@ jobs:
           echo "Discovering ALL files in $TEST_FILES_DIR for testing..."
           : > /tmp/test_files.txt  # Clear the file
           
-          # Process ALL files in the directory, categorizing them
+          # Process ALL files in the directory, categorizing them by ALL supported DataPusher Plus formats
           find "$TEST_FILES_DIR" -type f -name "*" | while read filepath; do
             filename=$(basename "$filepath")
             name=$(echo "$filename" | sed 's/\.[^.]*$//')  # Remove extension
             extension=$(echo "$filename" | sed 's/.*\.//' | tr '[:upper:]' '[:lower:]')
             
-            # Categorize by file extension
+            # Categorize by file extension - ALL DataPusher Plus supported formats
             case "$extension" in
               csv)
                 echo "$name|http://localhost:8080/$filename|CSV|text/csv|CSV file: $filename" >> /tmp/test_files.txt
@@ -719,8 +719,26 @@ jobs:
               tsv)
                 echo "$name|http://localhost:8080/$filename|TSV|text/tab-separated-values|TSV file: $filename" >> /tmp/test_files.txt
                 ;;
-              xlsx|xls)
+              tab)
+                echo "$name|http://localhost:8080/$filename|TAB|text/tab-separated-values|TAB file: $filename" >> /tmp/test_files.txt
+                ;;
+              ssv)
+                echo "$name|http://localhost:8080/$filename|SSV|text/space-separated-values|SSV file: $filename" >> /tmp/test_files.txt
+                ;;
+              xls)
+                echo "$name|http://localhost:8080/$filename|XLS|application/vnd.ms-excel|Excel file (legacy): $filename" >> /tmp/test_files.txt
+                ;;
+              xlsx)
                 echo "$name|http://localhost:8080/$filename|XLSX|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|Excel file: $filename" >> /tmp/test_files.txt
+                ;;
+              xlsxb)
+                echo "$name|http://localhost:8080/$filename|XLSXB|application/vnd.ms-excel.sheet.binary.macroEnabled.12|Excel Binary Workbook: $filename" >> /tmp/test_files.txt
+                ;;
+              xlsm)
+                echo "$name|http://localhost:8080/$filename|XLSM|application/vnd.ms-excel.sheet.macroEnabled.12|Excel Macro-Enabled Workbook: $filename" >> /tmp/test_files.txt
+                ;;
+              ods)
+                echo "$name|http://localhost:8080/$filename|ODS|application/vnd.oasis.opendocument.spreadsheet|OpenOffice/LibreOffice Calc: $filename" >> /tmp/test_files.txt
                 ;;
               json)
                 echo "$name|http://localhost:8080/$filename|JSON|application/json|JSON file: $filename" >> /tmp/test_files.txt
@@ -728,12 +746,21 @@ jobs:
               geojson)
                 echo "$name|http://localhost:8080/$filename|GEOJSON|application/geo+json|GeoJSON file: $filename" >> /tmp/test_files.txt
                 ;;
+              shp)
+                echo "$name|http://localhost:8080/$filename|SHP|application/x-shapefile|ESRI Shapefile: $filename" >> /tmp/test_files.txt
+                ;;
+              qgis)
+                echo "$name|http://localhost:8080/$filename|QGIS|application/x-qgis|QGIS project file: $filename" >> /tmp/test_files.txt
+                ;;
+              zip)
+                echo "$name|http://localhost:8080/$filename|ZIP|application/zip|ZIP archive: $filename" >> /tmp/test_files.txt
+                ;;
               txt)
                 echo "$name|http://localhost:8080/$filename|TXT|text/plain|Text file: $filename" >> /tmp/test_files.txt
                 ;;
               *)
                 # Log unsupported file types as skipped
-                echo "$filename,Unsupported file format: .$extension" >> /tmp/skipped_files.csv
+                echo "$filename,Unsupported file format: .$extension (not in DataPusher Plus supported formats)" >> /tmp/skipped_files.csv
                 echo "SKIP: Unsupported format .$extension for file: $filename"
                 ;;
             esac
@@ -742,7 +769,7 @@ jobs:
           # Check if we have any test files
           if [ ! -s /tmp/test_files.txt ]; then
             echo "ERROR: No supported test files found in $TEST_FILES_DIR"
-            echo "Supported formats: .csv, .tsv, .xlsx, .xls, .json, .geojson, .txt"
+            echo "Supported DataPusher Plus formats: .csv, .tsv, .tab, .ssv, .xls, .xlsx, .xlsxb, .xlsm, .ods, .json, .geojson, .shp, .qgis, .zip, .txt"
             kill $HTTP_SERVER_PID 2>/dev/null || true
             exit 1
           fi
@@ -775,6 +802,11 @@ jobs:
           failed_files=0
           skipped_files=0
           
+          # Initialize format-specific counters
+          declare -A format_counts
+          declare -A format_passed
+          declare -A format_failed
+          
           # Process each test file
           while IFS='|' read -r file_name file_url file_format file_mimetype file_desc || [ -n "$file_name" ]; do
             # Skip empty lines and comments
@@ -794,6 +826,15 @@ jobs:
             fi
             
             total_files=$((total_files + 1))
+            
+            # Track format counts
+            if [ -z "${format_counts[$file_format]}" ]; then
+              format_counts[$file_format]=0
+              format_passed[$file_format]=0
+              format_failed[$file_format]=0
+            fi
+            format_counts[$file_format]=$((format_counts[$file_format] + 1))
+            
             echo ""
             echo "=========================================="
             echo "Testing File #${total_files}: $file_name"
@@ -934,9 +975,11 @@ jobs:
             # Update counters
             if [ "$upload_status" = "SUCCESS" ] && [ "$datapusher_status" = "complete" ] && [ "$datastore_active" = "true" ]; then
               passed_files=$((passed_files + 1))
+              format_passed[$file_format]=$((format_passed[$file_format] + 1))
               echo "  🎉 PASS: $file_name processed successfully"
             else
               failed_files=$((failed_files + 1))
+              format_failed[$file_format]=$((format_failed[$file_format] + 1))
               echo "  ❌ FAIL: $file_name had issues"
             fi
             
@@ -974,6 +1017,18 @@ jobs:
           else
             echo "No files were tested"
           fi
+          echo ""
+          
+          echo "=== Results by Format ==="
+          for format in "${!format_counts[@]}"; do
+            total_fmt=${format_counts[$format]}
+            passed_fmt=${format_passed[$format]}
+            failed_fmt=${format_failed[$format]}
+            if [ $total_fmt -gt 0 ]; then
+              success_rate=$(( passed_fmt * 100 / total_fmt ))
+              echo "  $format: $passed_fmt/$total_fmt passed (${success_rate}%)"
+            fi
+          done
           echo ""
           
           echo "=== Detailed Results ==="
