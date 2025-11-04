@@ -400,6 +400,15 @@ jobs:
           else
             echo "Datastore permission step returned non-zero; continuing."
           fi
+      - name: Initialize DataPusher Plus database
+        run: |
+          set -eu
+          echo "Running DataPusher Plus database migrations..."
+          if ckan -c /srv/app/src/ckan/test-core.ini db upgrade -p datapusher_plus; then
+            echo "DataPusher Plus database initialized successfully"
+          else
+            echo "DataPusher Plus DB migration failed (might already be initialized)"
+          fi
       - name: Start CKAN server
         run: |
           set -eu
@@ -722,7 +731,7 @@ jobs:
                 echo "$name|http://localhost:8080/$filename|TAB|text/tab-separated-values|Tab file: $filename" >> /tmp/test_files.txt
                 ;;
               ssv)
-                echo "$name|http://localhost:8080/$filename|SSV|text/space-separated-values|SSV file: $filename" >> /tmp/test_files.txt
+                echo "$name|http://localhost:8080/$filename|SSV|text/csv|SSV file: $filename" >> /tmp/test_files.txt
                 ;;
               xls)
                 echo "$name|http://localhost:8080/$filename|XLS|application/vnd.ms-excel|Excel file: $filename" >> /tmp/test_files.txt
