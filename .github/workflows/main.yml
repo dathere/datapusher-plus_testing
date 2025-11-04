@@ -704,13 +704,13 @@ jobs:
           echo "Discovering ALL files in $TEST_FILES_DIR for testing..."
           : > /tmp/test_files.txt  # Clear the file
           
-          # Process ALL files in the directory, categorizing them by ALL supported DataPusher Plus formats
+          # Process ALL files in the directory, categorizing them
           find "$TEST_FILES_DIR" -type f -name "*" | while read filepath; do
             filename=$(basename "$filepath")
             name=$(echo "$filename" | sed 's/\.[^.]*$//')  # Remove extension
             extension=$(echo "$filename" | sed 's/.*\.//' | tr '[:upper:]' '[:lower:]')
             
-            # Categorize by file extension - ALL DataPusher Plus supported formats
+            # Categorize by file extension
             case "$extension" in
               csv)
                 echo "$name|http://localhost:8080/$filename|CSV|text/csv|CSV file: $filename" >> /tmp/test_files.txt
@@ -719,47 +719,41 @@ jobs:
                 echo "$name|http://localhost:8080/$filename|TSV|text/tab-separated-values|TSV file: $filename" >> /tmp/test_files.txt
                 ;;
               tab)
-                echo "$name|http://localhost:8080/$filename|TAB|text/tab-separated-values|TAB file: $filename" >> /tmp/test_files.txt
+                echo "$name|http://localhost:8080/$filename|TAB|text/tab-separated-values|Tab file: $filename" >> /tmp/test_files.txt
                 ;;
               ssv)
                 echo "$name|http://localhost:8080/$filename|SSV|text/space-separated-values|SSV file: $filename" >> /tmp/test_files.txt
                 ;;
               xls)
-                echo "$name|http://localhost:8080/$filename|XLS|application/vnd.ms-excel|Excel file (legacy): $filename" >> /tmp/test_files.txt
+                echo "$name|http://localhost:8080/$filename|XLS|application/vnd.ms-excel|Excel file: $filename" >> /tmp/test_files.txt
                 ;;
               xlsx)
                 echo "$name|http://localhost:8080/$filename|XLSX|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|Excel file: $filename" >> /tmp/test_files.txt
                 ;;
               xlsxb)
-                echo "$name|http://localhost:8080/$filename|XLSXB|application/vnd.ms-excel.sheet.binary.macroEnabled.12|Excel Binary Workbook: $filename" >> /tmp/test_files.txt
+                echo "$name|http://localhost:8080/$filename|XLSXB|application/vnd.ms-excel.sheet.binary.macroEnabled.12|Excel Binary file: $filename" >> /tmp/test_files.txt
                 ;;
               xlsm)
-                echo "$name|http://localhost:8080/$filename|XLSM|application/vnd.ms-excel.sheet.macroEnabled.12|Excel Macro-Enabled Workbook: $filename" >> /tmp/test_files.txt
+                echo "$name|http://localhost:8080/$filename|XLSM|application/vnd.ms-excel.sheet.macroEnabled.12|Excel Macro-Enabled file: $filename" >> /tmp/test_files.txt
                 ;;
               ods)
-                echo "$name|http://localhost:8080/$filename|ODS|application/vnd.oasis.opendocument.spreadsheet|OpenOffice/LibreOffice Calc: $filename" >> /tmp/test_files.txt
-                ;;
-              json)
-                echo "$name|http://localhost:8080/$filename|JSON|application/json|JSON file: $filename" >> /tmp/test_files.txt
+                echo "$name|http://localhost:8080/$filename|ODS|application/vnd.oasis.opendocument.spreadsheet|OpenOffice Calc file: $filename" >> /tmp/test_files.txt
                 ;;
               geojson)
                 echo "$name|http://localhost:8080/$filename|GEOJSON|application/geo+json|GeoJSON file: $filename" >> /tmp/test_files.txt
                 ;;
               shp)
-                echo "$name|http://localhost:8080/$filename|SHP|application/x-shapefile|ESRI Shapefile: $filename" >> /tmp/test_files.txt
+                echo "$name|http://localhost:8080/$filename|SHP|application/x-shp|Shapefile: $filename" >> /tmp/test_files.txt
                 ;;
               qgis)
-                echo "$name|http://localhost:8080/$filename|QGIS|application/x-qgis|QGIS project file: $filename" >> /tmp/test_files.txt
+                echo "$name|http://localhost:8080/$filename|QGIS|application/x-qgis|QGIS file: $filename" >> /tmp/test_files.txt
                 ;;
               zip)
                 echo "$name|http://localhost:8080/$filename|ZIP|application/zip|ZIP archive: $filename" >> /tmp/test_files.txt
                 ;;
-              txt)
-                echo "$name|http://localhost:8080/$filename|TXT|text/plain|Text file: $filename" >> /tmp/test_files.txt
-                ;;
               *)
                 # Log unsupported file types as skipped
-                echo "$filename,Unsupported file format: .$extension (not in DataPusher Plus supported formats)" >> /tmp/skipped_files.csv
+                echo "$filename,Unsupported file format: .$extension" >> /tmp/skipped_files.csv
                 echo "SKIP: Unsupported format .$extension for file: $filename"
                 ;;
             esac
@@ -768,7 +762,7 @@ jobs:
           # Check if we have any test files
           if [ ! -s /tmp/test_files.txt ]; then
             echo "ERROR: No supported test files found in $TEST_FILES_DIR"
-            echo "Supported DataPusher Plus formats: .csv, .tsv, .tab, .ssv, .xls, .xlsx, .xlsxb, .xlsm, .ods, .json, .geojson, .shp, .qgis, .zip, .txt"
+            echo "Supported formats: .csv, .tsv, .tab, .ssv, .xls, .xlsx, .xlsxb, .xlsm, .ods, .geojson, .shp, .qgis, .zip"
             kill $HTTP_SERVER_PID 2>/dev/null || true
             exit 1
           fi
@@ -820,7 +814,6 @@ jobs:
             fi
             
             total_files=$((total_files + 1))
-            
             echo ""
             echo "=========================================="
             echo "Testing File #${total_files}: $file_name"
