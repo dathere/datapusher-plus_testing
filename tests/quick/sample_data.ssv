@@ -1,0 +1,11 @@
+ID;Name;Department;Email;Hire_Date;Salary
+101;John Smith;Engineering;john.smith@company.com;2020-03-15;75000
+102;Sarah Johnson;Marketing;sarah.j@company.com;2019-07-22;68000
+103;Michael Chen;Sales;m.chen@company.com;2021-01-10;72000
+104;Emily Rodriguez;Engineering;emily.r@company.com;2018-11-05;82000
+105;David Kim;Human Resources;david.kim@company.com;2020-09-18;65000
+106;Lisa Anderson;Finance;l.anderson@company.com;2017-04-30;78000
+107;James Wilson;Sales;j.wilson@company.com;2021-06-12;70000
+108;Maria Garcia;Marketing;maria.g@company.com;2019-12-03;69000
+109;Robert Taylor;Engineering;r.taylor@company.com;2022-02-28;76000
+110;Jennifer Lee;Finance;jennifer.lee@company.com;2018-08-14;81000
