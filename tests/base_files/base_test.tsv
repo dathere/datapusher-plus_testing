@@ -1,0 +1,11 @@
+Product_ID	Product_Name	Category	Price	Stock_Quantity	Supplier	Last_Restock_Date
+P001	Wireless Mouse	Electronics	29.99	150	TechSupply Co	2024-10-15
+P002	USB-C Cable	Accessories	12.50	300	CableWorld	2024-10-20
+P003	Laptop Stand	Office Furniture	45.00	75	ErgoDesk Inc	2024-09-28
+P004	Mechanical Keyboard	Electronics	89.99	50	TechSupply Co	2024-10-18
+P005	Monitor Screen Protector	Accessories	19.95	200	ScreenGuard Ltd	2024-10-12
+P006	Desk Lamp	Office Furniture	34.50	120	LightWorks	2024-10-05
+P007	Webcam HD	Electronics	65.00	80	TechSupply Co	2024-10-22
+P008	Phone Holder	Accessories	15.99	250	MobileFix	2024-10-10
+P009	Ergonomic Chair	Office Furniture	199.99	30	ErgoDesk Inc	2024-09-15
+P010	Bluetooth Headset	Electronics	55.00	100	AudioMax	2024-10-25
