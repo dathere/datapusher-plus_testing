@@ -2,6 +2,11 @@ name: DataPusher+ Testing Run
 on:
   workflow_dispatch:
      inputs:
+       repo_branch:
+         description: 'Repository branch to test'
+         required: false
+         default: 'main'
+         type: string
        datapusher_branch:
          description: 'DataPusher+ branch or commit'
          required: false
@@ -59,6 +64,8 @@ jobs:
           apt-get install -y curl wget net-tools procps postgresql-client jq  
           echo "Essential tools installed successfully"
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.repo_branch || github.ref }}
       - name: Wait for PostgreSQL to be ready
         run: |
           echo "Waiting for PostgreSQL to be ready..."
