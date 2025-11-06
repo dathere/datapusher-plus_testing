@@ -194,15 +194,20 @@ jobs:
           wget -q "$QSV_URL" -O "$QSV_ZIP"
           unzip -q "$QSV_ZIP"
           
+          # Install binaries (no sudo needed - already running as root)
+          # qsvdp - Data Package variant (main binary for most use cases)
+          # qsv - Standard variant
+          # qsvlite - Lightweight variant (fewer features)
+          
           if [ -f qsvdp ]; then
-            sudo mv qsvdp /usr/local/bin/qsvdp
-            sudo chmod +x /usr/local/bin/qsvdp
+            mv qsvdp /usr/local/bin/qsvdp
+            chmod +x /usr/local/bin/qsvdp
             echo "✓ Installed qsvdp"
           fi
           
           if [ -f qsv ]; then
-            sudo mv qsv /usr/local/bin/qsv
-            sudo chmod +x /usr/local/bin/qsv
+            mv qsv /usr/local/bin/qsv
+            chmod +x /usr/local/bin/qsv
             echo "✓ Installed qsv"
           fi
           
@@ -216,7 +221,7 @@ jobs:
           else
             echo "Warning: qsv installation may have failed"
             exit 1
-          fi          
+          fi        
       
       - name: Setup CKAN configuration (/srv/app/src/ckan/test-core.ini)
         run: |
