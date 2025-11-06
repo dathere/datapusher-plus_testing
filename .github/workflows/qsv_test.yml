@@ -1,0 +1,180 @@
+name: qsv Installation Testing
+on:
+  workflow_dispatch:
+    inputs:
+      qsv_version:
+        description: 'QSV version to test'
+        required: false
+        default: '9.1.0'
+        type: string
+      test_all_versions:
+        description: 'Test multiple versions'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  test-qsv-installation:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        qsv_version: ${{ github.event.inputs.test_all_versions == 'true' && fromJson('["7.1.0", "9.1.0"]') || fromJson(format('["{0}"]', github.event.inputs.qsv_version)) }}
+        build_type: ['musl', 'gnu']
+    
+    steps:
+      - name: System Information
+        run: |
+          echo "=== System Information ==="
+          uname -a
+          echo ""
+          echo "=== CPU Information ==="
+          lscpu | grep -E "Model name|Architecture|CPU op-mode|Byte Order|CPU\(s\)|Thread|Core|Socket|Flags"
+          echo ""
+          echo "=== CPU Flags (Instruction Sets) ==="
+          cat /proc/cpuinfo | grep flags | head -1
+          echo ""
+          echo "=== Memory ==="
+          free -h
+          echo ""
+          echo "=== Disk Space ==="
+          df -h
+      
+      - name: Install required tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip file binutils gdb
+      
+      - name: Download and extract qsv ${{ matrix.qsv_version }} (${{ matrix.build_type }})
+        run: |
+          set -eu
+          
+          if [ "${{ matrix.build_type }}" = "musl" ]; then
+            QSV_ZIP="qsv-${{ matrix.qsv_version }}-x86_64-unknown-linux-musl.zip"
+          else
+            QSV_ZIP="qsv-${{ matrix.qsv_version }}-x86_64-unknown-linux-gnu.zip"
+          fi
+          
+          QSV_URL="https://github.com/dathere/qsv/releases/download/${{ matrix.qsv_version }}/${QSV_ZIP}"
+          
+          echo "Downloading from: $QSV_URL"
+          mkdir -p /tmp/qsv-test && cd /tmp/qsv-test
+          
+          if ! wget -q "$QSV_URL" -O "$QSV_ZIP"; then
+            echo "Failed to download qsv"
+            exit 1
+          fi
+          
+          echo "Download successful. Extracting..."
+          unzip -q "$QSV_ZIP"
+          
+          echo ""
+          echo "=== Files in archive ==="
+          ls -lh
+      
+      - name: Binary analysis
+        run: |
+          cd /tmp/qsv-test
+          
+          echo "=== Binary file type ==="
+          file qsvdp qsv 2>/dev/null || echo "Some binaries not found"
+          
+          echo ""
+          echo "=== ELF header information ==="
+          readelf -h qsvdp 2>/dev/null | grep -E "Class|Data|Machine|Version|Type" || echo "readelf failed"
+          
+          echo ""
+          echo "=== Architecture-specific attributes ==="
+          readelf -A qsvdp 2>/dev/null || echo "No architecture-specific attributes"
+          
+          echo ""
+          echo "=== Dynamic dependencies (if any) ==="
+          ldd qsvdp 2>/dev/null || echo "Not dynamically linked (static binary)"
+          
+          echo ""
+          echo "=== Binary symbols (checking for CPU-specific optimizations) ==="
+          nm qsvdp 2>/dev/null | grep -i "avx\|sse\|fma" | head -20 || echo "No obvious CPU-specific symbols found"
+      
+      - name: Test qsvdp execution
+        id: test_qsvdp
+        continue-on-error: true
+        run: |
+          cd /tmp/qsv-test
+          chmod +x qsvdp
+          
+          echo "=== Attempting to run qsvdp --version ==="
+          ./qsvdp --version
+          
+          echo ""
+          echo "=== Testing basic qsvdp functionality ==="
+          ./qsvdp --list
+      
+      - name: Test qsv execution
+        id: test_qsv
+        continue-on-error: true
+        run: |
+          cd /tmp/qsv-test
+          chmod +x qsv
+          
+          echo "=== Attempting to run qsv --version ==="
+          ./qsv --version
+          
+          echo ""
+          echo "=== Testing basic qsv functionality ==="
+          ./qsv --list
+      
+      - name: Debug failed execution with GDB
+        if: steps.test_qsvdp.outcome == 'failure' || steps.test_qsv.outcome == 'failure'
+        run: |
+          cd /tmp/qsv-test
+          
+          echo "=== Debugging with GDB ==="
+          if [ -f qsvdp ]; then
+            echo "Testing qsvdp:"
+            gdb -batch -ex "run --version" -ex "where" -ex "info registers" ./qsvdp 2>&1 || true
+          fi
+          
+          echo ""
+          if [ -f qsv ]; then
+            echo "Testing qsv:"
+            gdb -batch -ex "run --version" -ex "where" -ex "info registers" ./qsv 2>&1 || true
+          fi
+      
+      - name: Installation test
+        if: steps.test_qsvdp.outcome == 'success' || steps.test_qsv.outcome == 'success'
+        run: |
+          cd /tmp/qsv-test
+          
+          echo "=== Installing to /usr/local/bin ==="
+          if [ -f qsvdp ]; then
+            sudo cp qsvdp /usr/local/bin/qsvdp
+            sudo chmod +x /usr/local/bin/qsvdp
+            echo "Installed qsvdp"
+          fi
+          
+          if [ -f qsv ]; then
+            sudo cp qsv /usr/local/bin/qsv
+            sudo chmod +x /usr/local/bin/qsv
+            echo "Installed qsv"
+          fi
+          
+          echo ""
+          echo "=== Verifying installation ==="
+          which qsvdp qsv || true
+          qsvdp --version 2>/dev/null || echo "qsvdp not accessible"
+          qsv --version 2>/dev/null || echo "qsv not accessible"
+      
+      - name: Summary
+        if: always()
+        run: |
+          echo "=== Test Summary for qsv ${{ matrix.qsv_version }} (${{ matrix.build_type }}) ==="
+          echo "qsvdp test: ${{ steps.test_qsvdp.outcome }}"
+          echo "qsv test: ${{ steps.test_qsv.outcome }}"
+          
+          if [ "${{ steps.test_qsvdp.outcome }}" = "success" ] || [ "${{ steps.test_qsv.outcome }}" = "success" ]; then
+            echo "✓ Installation SUCCESSFUL"
+            exit 0
+          else
+            echo "✗ Installation FAILED"
+            exit 1
+          fi
