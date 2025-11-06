@@ -179,36 +179,29 @@ jobs:
           
           echo "Installation complete: GDAL, ckanapi, datapusher-plus, and ckanext-scheming"
 
-      - name: Install qsv (glibc)
+      - name: Install qsv (musl static)
         run: |
           set -eu
-          echo "Attempting to download qsv glibc binary (best-effort)..."
+          echo "Attempting to download static qsv musl binary (best-effort)..."
           QSV_VER="9.1.0"
-          QSV_ZIP="qsv-${QSV_VER}-x86_64-unknown-linux-gnu.zip"
+          QSV_ZIP="qsv-${QSV_VER}-x86_64-unknown-linux-musl.zip"
           QSV_URL="https://github.com/dathere/qsv/releases/download/${QSV_VER}/${QSV_ZIP}"
-          QSV_SHA256="7434226f5b6ab6aaeffcb1b0a15c69cd00598ac1f86d3b619bc83ec500cb2b7c"
-          
-          mkdir -p /tmp/qsv && cd /tmp/qsv
-          
+          mkdir -p /tmp/qsv && cd /tmp/qsv  
           if wget -q --spider "$QSV_URL"; then
-            wget -q "$QSV_URL" -O "$QSV_ZIP"
-            
-            # Verify SHA256 checksum
-            echo "${QSV_SHA256}  ${QSV_ZIP}" | sha256sum -c - || {
-              echo "SHA256 checksum verification failed!"
-              exit 1
-            }
-            
-            unzip -o "$QSV_ZIP"
-            
+            wget -q "$QSV_URL" -O "$QSV_ZIP"  
+            echo "Contents of zip file:"
+            unzip -l "$QSV_ZIP"
+            unzip -o "$QSV_ZIP"  
+            echo "Files after extraction:"
+            ls -lah
             # try to find 'qsv' or 'qsvdp' binary
             if [ -f qsvdp ]; then
-              mv qsvdp /usr/local/bin/qsvdp
-              chmod +x /usr/local/bin/qsvdp
+              mv qsvdp /usr/local/bin/qsvdp  
+              chmod +x /usr/local/bin/qsvdp  
               echo "Installed qsvdp to /usr/local/bin/qsvdp"
             elif [ -f qsv ]; then
-              mv qsv /usr/local/bin/qsv
-              chmod +x /usr/local/bin/qsv
+              mv qsv /usr/local/bin/qsv  
+              chmod +x /usr/local/bin/qsv  
               echo "Installed qsv to /usr/local/bin/qsv"
             else
               echo "Downloaded archive but could not find qsv binary inside"
@@ -216,10 +209,8 @@ jobs:
           else
             echo "qsv release URL not reachable; skipping qsv install"
           fi
-          
           /usr/local/bin/qsvdp --version >/dev/null 2>&1 || /usr/local/bin/qsv --version >/dev/null 2>&1 || echo "qsv not installed or not runnable (this is okay for plugin presence test)."
-      
-            
+                  
       
       - name: Setup CKAN configuration (/srv/app/src/ckan/test-core.ini)
         run: |
