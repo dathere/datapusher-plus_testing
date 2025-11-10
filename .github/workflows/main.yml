@@ -180,6 +180,18 @@ jobs:
           pip install -e 'git+https://github.com/ckan/ckanext-scheming.git#egg=ckanext-scheming'
           
           echo "Installation complete: GDAL, ckanapi, datapusher-plus, and ckanext-scheming"
+
+
+      - name: Check GLIBC version
+        run: |
+          echo "=== System Information ==="
+          lsb_release -a 2>/dev/null || cat /etc/os-release
+          echo ""
+          echo "=== GLIBC Version ==="
+          ldd --version | head -n1
+          echo ""
+          echo "=== libc6 Package Version ==="
+          apt-cache policy libc6 | head -n3  
           
       - name: Install qsv (GNU version with dependency check)
         run: |
