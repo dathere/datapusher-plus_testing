@@ -179,12 +179,12 @@ jobs:
           
           echo "Installation complete: GDAL, ckanapi, datapusher-plus, and ckanext-scheming"
 
-      - name: Install qsv (musl static)
+      - name: Install qsv (GNU version)
         run: |
           set -eu
-          echo "Attempting to download static qsv musl binary (best-effort)..."
-          QSV_VER="8.1.0"
-          QSV_ZIP="qsv-${QSV_VER}-x86_64-unknown-linux-musl.zip"
+          echo "Attempting to download qsv GNU binary..."
+          QSV_VER="9.1.0"
+          QSV_ZIP="qsv-${QSV_VER}-x86_64-unknown-linux-gnu.zip"
           QSV_URL="https://github.com/dathere/qsv/releases/download/${QSV_VER}/${QSV_ZIP}"
           mkdir -p /tmp/qsv && cd /tmp/qsv  
           if wget -q --spider "$QSV_URL"; then
@@ -205,8 +205,7 @@ jobs:
           else
             echo "qsv release URL not reachable; skipping qsv install"
           fi
-          /usr/local/bin/qsvdp --version >/dev/null 2>&1 || /usr/local/bin/qsv --version >/dev/null 2>&1 || echo "qsv not installed or not runnable (this is okay for plugin presence test)."    
-            
+          /usr/local/bin/qsvdp --version >/dev/null 2>&1 || /usr/local/bin/qsv --version >/dev/null 2>&1 || echo "qsv not installed or not runnable (this is okay for plugin presence test)."            
       - name: Setup CKAN configuration (/srv/app/src/ckan/test-core.ini)
         run: |
           set -eu
