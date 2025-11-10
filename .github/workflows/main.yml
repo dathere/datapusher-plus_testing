@@ -182,30 +182,42 @@ jobs:
       - name: Install qsv (GNU version)
         run: |
           set -eu
-          echo "Attempting to download qsv GNU binary..."
-          QSV_VER="9.1.0"
-          QSV_ZIP="qsv-${QSV_VER}-x86_64-unknown-linux-gnu.zip"
-          QSV_URL="https://github.com/dathere/qsv/releases/download/${QSV_VER}/${QSV_ZIP}"
-          mkdir -p /tmp/qsv && cd /tmp/qsv  
-          if wget -q --spider "$QSV_URL"; then
-            wget -q "$QSV_URL" -O "$QSV_ZIP"  
-            unzip -o "$QSV_ZIP"  
-            # try to find 'qsv' or 'qsvdp' binary
-            if [ -f qsvdp ]; then
-              mv qsvdp /usr/local/bin/qsvdp  
-              chmod +x /usr/local/bin/qsvdp  
-              echo "Installed qsvdp to /usr/local/bin/qsvdp"
-            elif [ -f qsv ]; then
-              mv qsv /usr/local/bin/qsv  
-              chmod +x /usr/local/bin/qsv  
-              echo "Installed qsv to /usr/local/bin/qsv"
-            else
-              echo "Downloaded archive but could not find qsv binary inside"
-            fi
+          
+          if [ "gnu" = "musl" ]; then
+            QSV_ZIP="qsv-9.1.0-x86_64-unknown-linux-musl.zip"
           else
-            echo "qsv release URL not reachable; skipping qsv install"
+            QSV_ZIP="qsv-9.1.0-x86_64-unknown-linux-gnu.zip"
           fi
-          /usr/local/bin/qsvdp --version >/dev/null 2>&1 || /usr/local/bin/qsv --version >/dev/null 2>&1 || echo "qsv not installed or not runnable (this is okay for plugin presence test)."            
+          QSV_URL="https://github.com/dathere/qsv/releases/download/9.1.0/${QSV_ZIP}"
+          echo "Downloading from: $QSV_URL"
+          mkdir -p /tmp/qsv-test && cd /tmp/qsv-test
+          if ! wget -q "$QSV_URL" -O "$QSV_ZIP"; then
+            echo "Failed to download qsv"
+            exit 1
+          fi
+          echo "Download successful. Extracting..."
+          unzip -q "$QSV_ZIP"
+          echo ""
+          echo "=== Files in archive ==="
+          ls -lh
+          
+          # Install the binary
+          if [ -f qsvdp ]; then
+            mv qsvdp /usr/local/bin/qsvdp  
+            chmod +x /usr/local/bin/qsvdp  
+            echo "Installed qsvdp to /usr/local/bin/qsvdp"
+          elif [ -f qsv ]; then
+            mv qsv /usr/local/bin/qsv  
+            chmod +x /usr/local/bin/qsv  
+            echo "Installed qsv to /usr/local/bin/qsv"
+          else
+            echo "Could not find qsv binary in extracted files"
+            exit 1
+          fi
+          
+          # Verify installation
+          /usr/local/bin/qsvdp --version 2>/dev/null || /usr/local/bin/qsv --version 2>/dev/null || echo "Warning: qsv installed but version check failed"
+          
       - name: Setup CKAN configuration (/srv/app/src/ckan/test-core.ini)
         run: |
           set -eu
