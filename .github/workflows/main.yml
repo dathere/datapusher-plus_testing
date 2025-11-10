@@ -184,9 +184,9 @@ jobs:
           set -eu
           
           if [ "gnu" = "musl" ]; then
-            QSV_ZIP="qsv-9.1.0-x86_64-unknown-linux-musl.zip"
+            QSV_ZIP="qsv-8.1.0-x86_64-unknown-linux-musl.zip"
           else
-            QSV_ZIP="qsv-9.1.0-x86_64-unknown-linux-gnu.zip"
+            QSV_ZIP="qsv-8.1.0-x86_64-unknown-linux-gnu.zip"
           fi
           QSV_URL="https://github.com/dathere/qsv/releases/download/9.1.0/${QSV_ZIP}"
           echo "Downloading from: $QSV_URL"
