@@ -103,6 +103,46 @@ jobs:
           PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE datastore_test TO datastore_write;"  
           PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "GRANT CONNECT ON DATABASE datastore_test TO datastore_read;"  
           echo "Database setup completed"
+
+      - name: Install qsv (GNU version)
+        run: |
+          set -eu
+          
+          if [ "gnu" = "musl" ]; then
+            QSV_ZIP="qsv-9.1.0-x86_64-unknown-linux-musl.zip"
+          else
+            QSV_ZIP="qsv-9.1.0-x86_64-unknown-linux-gnu.zip"
+          fi
+          QSV_URL="https://github.com/dathere/qsv/releases/download/9.1.0/${QSV_ZIP}"
+          echo "Downloading from: $QSV_URL"
+          mkdir -p /tmp/qsv-test && cd /tmp/qsv-test
+          if ! wget -q "$QSV_URL" -O "$QSV_ZIP"; then
+            echo "Failed to download qsv"
+            exit 1
+          fi
+          echo "Download successful. Extracting..."
+          unzip -q "$QSV_ZIP"
+          echo ""
+          echo "=== Files in archive ==="
+          ls -lh
+          
+          # Install the binary
+          if [ -f qsvdp ]; then
+            mv qsvdp /usr/local/bin/qsvdp  
+            chmod +x /usr/local/bin/qsvdp  
+            echo "Installed qsvdp to /usr/local/bin/qsvdp"
+          elif [ -f qsv ]; then
+            mv qsv /usr/local/bin/qsv  
+            chmod +x /usr/local/bin/qsv  
+            echo "Installed qsv to /usr/local/bin/qsv"
+          else
+            echo "Could not find qsv binary in extracted files"
+            exit 1
+          fi
+          
+          # Verify installation
+          /usr/local/bin/qsvdp --version 2>/dev/null || /usr/local/bin/qsv --version 2>/dev/null || echo "Warning: qsv installed but version check failed"
+
       - name: Install requirements, ckanapi and datapusher-plus
         run: |
           set -eu
@@ -179,44 +219,6 @@ jobs:
           
           echo "Installation complete: GDAL, ckanapi, datapusher-plus, and ckanext-scheming"
 
-      - name: Install qsv (GNU version)
-        run: |
-          set -eu
-          
-          if [ "gnu" = "musl" ]; then
-            QSV_ZIP="qsv-8.1.0-x86_64-unknown-linux-musl.zip"
-          else
-            QSV_ZIP="qsv-8.1.0-x86_64-unknown-linux-gnu.zip"
-          fi
-          QSV_URL="https://github.com/dathere/qsv/releases/download/9.1.0/${QSV_ZIP}"
-          echo "Downloading from: $QSV_URL"
-          mkdir -p /tmp/qsv-test && cd /tmp/qsv-test
-          if ! wget -q "$QSV_URL" -O "$QSV_ZIP"; then
-            echo "Failed to download qsv"
-            exit 1
-          fi
-          echo "Download successful. Extracting..."
-          unzip -q "$QSV_ZIP"
-          echo ""
-          echo "=== Files in archive ==="
-          ls -lh
-          
-          # Install the binary
-          if [ -f qsvdp ]; then
-            mv qsvdp /usr/local/bin/qsvdp  
-            chmod +x /usr/local/bin/qsvdp  
-            echo "Installed qsvdp to /usr/local/bin/qsvdp"
-          elif [ -f qsv ]; then
-            mv qsv /usr/local/bin/qsv  
-            chmod +x /usr/local/bin/qsv  
-            echo "Installed qsv to /usr/local/bin/qsv"
-          else
-            echo "Could not find qsv binary in extracted files"
-            exit 1
-          fi
-          
-          # Verify installation
-          /usr/local/bin/qsvdp --version 2>/dev/null || /usr/local/bin/qsv --version 2>/dev/null || echo "Warning: qsv installed but version check failed"
           
       - name: Setup CKAN configuration (/srv/app/src/ckan/test-core.ini)
         run: |
