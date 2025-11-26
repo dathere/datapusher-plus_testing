@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Advanced DataPusher Plus Analytics Engine
-Provides enterprise-grade insights and predictive analysis
-"""
 
 import re
 import csv
@@ -79,8 +75,17 @@ def parse_worker_logs(log_file_path):
         # Check normalization
         normalized = "Successful" if "Normalized & transcoded" in entry else "Failed"
 
-        # Check if valid CSV
-        valid_csv = "TRUE" if "Well-formed, valid CSV file confirmed" in entry else "FALSE"
+        # ENHANCED: Check if valid CSV - now handles converted files
+        csv_conversion_match = re.search(r'Successfully converted .+ to CSV', entry)
+        spatial_conversion_match = re.search(r'Converted.*?(?:GeoJSON|SHP|shapefile).*?to CSV', entry, re.IGNORECASE)
+        zip_to_csv_match = re.search(r'(?:Extracted|Decompressed).*?to CSV', entry, re.IGNORECASE)
+        
+        valid_csv = "TRUE" if (
+            "Well-formed, valid CSV file confirmed" in entry or 
+            csv_conversion_match is not None or
+            spatial_conversion_match is not None or
+            zip_to_csv_match is not None
+        ) else "FALSE"
 
         # Check if sorted
         sorted_match = re.search(r'Sorted: (True|False)', entry)
@@ -103,6 +108,51 @@ def parse_worker_logs(log_file_path):
         # Extract records detected
         records_match = re.search(r'(\d+)\s+records detected', entry)
         records_processed = int(records_match.group(1)) if records_match else 0
+
+        # NEW: Extract spatial/geometry processing information
+        geometry_simplified = "N/A"
+        geometry_simplified_match = re.search(r'Geometry simplified.*?tolerance[:\s]+([\d.]+)', entry, re.IGNORECASE)
+        if geometry_simplified_match:
+            geometry_simplified = f"YES (tolerance: {geometry_simplified_match.group(1)})"
+        elif re.search(r'(?:GeoJSON|SHP|shapefile)', entry, re.IGNORECASE):
+            # Spatial file but no simplification message
+            geometry_simplified = "NO"
+
+        # NEW: Extract features converted (for spatial files)
+        features_converted_match = re.search(r'Converted .* (?:to CSV )?with (\d+) features', entry, re.IGNORECASE)
+        features_converted = int(features_converted_match.group(1)) if features_converted_match else 0
+
+        # NEW: Extract ZIP file processing information
+        zip_decompressed = "N/A"
+        zip_files_extracted = 0
+        zip_decompressed_match = re.search(r'Decompressed ZIP archive.*?(\d+) files? extracted', entry, re.IGNORECASE)
+        if zip_decompressed_match:
+            zip_decompressed = "YES"
+            zip_files_extracted = int(zip_decompressed_match.group(1))
+        elif re.search(r'\.zip', file_name, re.IGNORECASE):
+            # ZIP file but no decompression message
+            zip_decompressed = "NO"
+
+        # NEW: Extract ZIP manifest entries
+        zip_manifest_match = re.search(r'Created ZIP manifest with (\d+) entries', entry, re.IGNORECASE)
+        zip_manifest_entries = int(zip_manifest_match.group(1)) if zip_manifest_match else 0
+
+        # NEW: Extract auto-extracted file information
+        auto_extracted_file_match = re.search(r'Auto-extracted single file: (.+)', entry)
+        auto_extracted_file = auto_extracted_file_match.group(1).strip() if auto_extracted_file_match else ""
+
+        # NEW: Extract Excel sheet information
+        excel_sheet_match = re.search(r'Using (?:Excel|sheet): (.+?) \(index: (-?\d+)\)', entry, re.IGNORECASE)
+        if excel_sheet_match:
+            excel_sheet_used = excel_sheet_match.group(1).strip()
+            excel_sheet_index = excel_sheet_match.group(2)
+        else:
+            excel_sheet_used = ""
+            excel_sheet_index = ""
+
+        # NEW: Detect coordinate system information (for spatial files)
+        coordinate_system_match = re.search(r'Coordinate [Ss]ystem: (.+?)(?:\n|$)', entry)
+        coordinate_system = coordinate_system_match.group(1).strip() if coordinate_system_match else ""
 
         # Extract timing information
         timings = {
@@ -152,7 +202,7 @@ def parse_worker_logs(log_file_path):
         indexed_match = re.search(r'Indexed (\d+) column/s', entry)
         columns_indexed = int(indexed_match.group(1)) if indexed_match else 0
 
-        # Extract specific DataPusher Plus error
+        # ENHANCED: Extract specific DataPusher Plus error with expanded classification
         error_type = ""
         error_message = ""
 
@@ -161,13 +211,26 @@ def parse_worker_logs(log_file_path):
             dp_error_match = re.search(r'ckanext\.datapusher_plus\.utils\.JobError: (.+?)(?:\n|$)', entry)
             if dp_error_match:
                 error_message = dp_error_match.group(1).strip()
-                # Classify error type based on message content
+                # ENHANCED: Expanded error type classification
                 if "invalid Zip archive" in error_message or "EOCD" in error_message:
                     error_type = "CORRUPTED_EXCEL"
                 elif "qsv command failed" in error_message:
                     error_type = "QSV_ERROR"
                 elif "Only http, https, and ftp resources may be fetched" in error_message:
                     error_type = "INVALID_URL"
+                # NEW: Additional error types for expanded format support
+                elif "geometry simplification failed" in error_message.lower():
+                    error_type = "GEOMETRY_ERROR"
+                elif "invalid shapefile" in error_message.lower() or "shapefile error" in error_message.lower():
+                    error_type = "SHAPEFILE_ERROR"
+                elif "zip extraction failed" in error_message.lower() or "failed to extract" in error_message.lower():
+                    error_type = "ZIP_ERROR"
+                elif "coordinate system" in error_message.lower() or "projection" in error_message.lower():
+                    error_type = "COORDINATE_SYSTEM_ERROR"
+                elif "geojson" in error_message.lower():
+                    error_type = "GEOJSON_ERROR"
+                elif "format conversion" in error_message.lower() or "conversion failed" in error_message.lower():
+                    error_type = "FORMAT_CONVERSION_ERROR"
                 else:
                     error_type = "DATAPUSHER_ERROR"
             else:
@@ -200,18 +263,33 @@ def parse_worker_logs(log_file_path):
                 'rows_copied': rows_copied,
                 'columns_indexed': columns_indexed,
                 'error_type': error_type,
-                'error_message': error_message.replace('"', '""') if error_message else ""  # Escape quotes for CSV
+                'error_message': error_message.replace('"', '""') if error_message else "",  # Escape quotes for CSV
+                # NEW: Additional fields for expanded format support
+                'geometry_simplified': geometry_simplified,
+                'features_converted': features_converted,
+                'coordinate_system': coordinate_system,
+                'zip_decompressed': zip_decompressed,
+                'zip_files_extracted': zip_files_extracted,
+                'zip_manifest_entries': zip_manifest_entries,
+                'auto_extracted_file': auto_extracted_file,
+                'excel_sheet_used': excel_sheet_used,
+                'excel_sheet_index': excel_sheet_index
             })
 
     return processed_jobs
 
 def write_worker_analysis(jobs, output_file):
     """Write job analysis to CSV file"""
+    # ENHANCED: Updated fieldnames to include new format-specific fields
     fieldnames = ['timestamp', 'job_id', 'file_name', 'status', 'qsv_version', 'file_format', 
                   'encoding', 'normalized', 'valid_csv', 'sorted', 'db_safe_headers', 'analysis',
                   'records', 'total_time', 'download_time', 'analysis_time', 'copying_time', 
                   'indexing_time', 'formulae_time', 'metadata_time', 'rows_copied', 'columns_indexed',
-                  'error_type', 'error_message', 'data_quality_score', 'processing_efficiency']
+                  'error_type', 'error_message', 'data_quality_score', 'processing_efficiency',
+                  # NEW: Format-specific fields added at the end for backward compatibility
+                  'geometry_simplified', 'features_converted', 'coordinate_system',
+                  'zip_decompressed', 'zip_files_extracted', 'zip_manifest_entries', 
+                  'auto_extracted_file', 'excel_sheet_used', 'excel_sheet_index']
     
     with open(output_file, 'w', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
@@ -279,6 +357,17 @@ def generate_performance_insights(jobs):
                 format_counts[fmt] = format_counts.get(fmt, 0) + 1
             format_summary = ', '.join([f"{fmt}({count})" for fmt, count in format_counts.items()])
             insights.append(f"File Formats Processed: {format_summary}")
+        
+        # NEW: Spatial files analysis
+        spatial_jobs = [job for job in successful_jobs if job.get('features_converted', 0) > 0]
+        if spatial_jobs:
+            total_features = sum(job.get('features_converted', 0) for job in spatial_jobs)
+            insights.append(f"Spatial Files Processed: {len(spatial_jobs)} files, {total_features:,} features total")
+        
+        # NEW: ZIP files analysis
+        zip_jobs = [job for job in successful_jobs if job.get('zip_decompressed') == 'YES' or job.get('zip_manifest_entries', 0) > 0]
+        if zip_jobs:
+            insights.append(f"ZIP Archives Processed: {len(zip_jobs)} files")
     
     # Error analysis
     if error_jobs:
@@ -295,6 +384,16 @@ def generate_performance_insights(jobs):
         
         if 'QSV_ERROR' in error_types:
             insights.append(f"QSV Processing Errors: {error_types['QSV_ERROR']}")
+        
+        # NEW: Additional error type reporting
+        if 'GEOMETRY_ERROR' in error_types:
+            insights.append(f"Geometry Processing Errors: {error_types['GEOMETRY_ERROR']}")
+        
+        if 'SHAPEFILE_ERROR' in error_types:
+            insights.append(f"Shapefile Errors: {error_types['SHAPEFILE_ERROR']}")
+        
+        if 'ZIP_ERROR' in error_types:
+            insights.append(f"ZIP Extraction Errors: {error_types['ZIP_ERROR']}")
     
     return insights
 
@@ -708,7 +807,8 @@ def load_jobs_from_csv(csv_file):
                 for field in ['total_time', 'download_time', 'analysis_time', 'copying_time', 
                               'indexing_time', 'formulae_time', 'metadata_time']:
                     job[field] = float(job[field]) if job[field] else 0.0
-                for field in ['records', 'rows_copied', 'columns_indexed']:
+                for field in ['records', 'rows_copied', 'columns_indexed', 'features_converted', 
+                              'zip_files_extracted', 'zip_manifest_entries']:
                     job[field] = int(job[field]) if job[field] else 0
     except FileNotFoundError:
         print("Worker analysis file not found")
