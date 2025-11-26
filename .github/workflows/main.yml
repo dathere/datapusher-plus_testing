@@ -1125,205 +1125,161 @@ jobs:
           echo ""
           echo "Test completed at: $(date)"
 
-      - name: Generate comprehensive analysis summary
+      - name: Generate Combined Test Results and Worker Analysis
         if: always()
         run: |
-          {
-            echo "# DataPusher+ Test Results Summary"
-            echo ""
-            echo "**Test Run Date:** $(date '+%A, %B %d, %Y at %I:%M %p %Z')"
-            echo ""
+          set -eu
+          echo "=== Generating Combined Test Results and Worker Analysis ==="
+          
+          # First, process worker logs if they exist
+          echo "=== Processing DataPusher Plus Worker Logs ==="
+          
+          # Check if worker log exists
+          if [ ! -f /tmp/ckan_worker.log ]; then
+            echo "No worker log file found at /tmp/ckan_worker.log"
+            # Create comprehensive header structure with all new fields including enhanced analytics
+            echo "timestamp,job_id,file_name,status,qsv_version,file_format,encoding,normalized,valid_csv,sorted,db_safe_headers,analysis,records,total_time,download_time,analysis_time,copying_time,indexing_time,formulae_time,metadata_time,rows_copied,columns_indexed,error_type,error_message,data_quality_score,processing_efficiency" > /tmp/worker_analysis.csv
+          else
+            echo "Worker log file size: $(du -h /tmp/ckan_worker.log | cut -f1)"
+            echo "Running enhanced Python log analyzer..."
             
-            # Read test results if available
-            total_tests=0
-            passed=0
-            failed=0
-            skipped_count=0
-            
-            if [ -f /tmp/test_results.csv ]; then
-              # Count total tests (excluding header)
-              total_tests=$(tail -n +2 /tmp/test_results.csv | wc -l)
-              
-              # Count passed tests (datapusher_status = success AND datastore_active = true)
-              passed=$(tail -n +2 /tmp/test_results.csv | awk -F',' '$5 == "success" && $6 == "true"' | wc -l)
-              
-              # Count failed tests
-              failed=$(tail -n +2 /tmp/test_results.csv | awk -F',' '$5 != "success" || $6 != "true"' | wc -l)
-            fi
+            # Run the Python script to analyze logs
+            python3 ${GITHUB_WORKSPACE}/tests/log_analyzer.py analyze /tmp/ckan_worker.log /tmp/worker_analysis.csv
+          fi
+          
+          # Now check if both results files exist
+          if [ ! -f /tmp/test_results.csv ] && [ ! -f /tmp/worker_analysis.csv ]; then
+            echo "No test results or worker analysis files found"
+            echo "# DataPusher Plus Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "No test data available to analyze" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          
+          # Initialize counters for test results
+          total_tests=0
+          skipped_count=0
+          total_files_in_dir=0
+          passed=0
+          failed=0
+          error_count=0
+          tested_success_rate=0
+          overall_success_rate=0
+          
+          # Process test results if available
+          if [ -f /tmp/test_results.csv ]; then
+            # Count total results
+            total_lines=$(wc -l < /tmp/test_results.csv)
+            total_tests=$((total_lines - 1))  # Subtract header line
             
             # Count skipped files
             if [ -f /tmp/skipped_files.csv ]; then
-              skipped_count=$(tail -n +2 /tmp/skipped_files.csv | wc -l)
+              skipped_lines=$(wc -l < /tmp/skipped_files.csv)
+              skipped_count=$((skipped_lines - 1))  # Subtract header line
             fi
             
-            # Calculate success rate
+            total_files_in_dir=$((total_tests + skipped_count))
+            
             if [ $total_tests -gt 0 ]; then
-              success_rate=$((passed * 100 / total_tests))
-            else
-              success_rate=0
+              # Count results by status
+              passed=$(grep -c ",SUCCESS,.*,complete,true," /tmp/test_results.csv 2>/dev/null || echo "0")
+              failed=$(tail -n +2 /tmp/test_results.csv | grep -v ",SUCCESS,.*,complete,true," | wc -l)
+              error_count=$(grep -c ",error," /tmp/test_results.csv 2>/dev/null || echo "0")
+              error_count=$(echo "$error_count" | tr -d '\n')
+              
+              # Calculate success rates
+              tested_success_rate=$(( passed * 100 / total_tests ))
+              if [ $total_files_in_dir -gt 0 ]; then
+                overall_success_rate=$(( passed * 100 / total_files_in_dir ))
+              fi
             fi
-            
-            # Test Overview
-            echo "## Test Overview"
+          fi
+          
+          # Check if worker analysis is available
+          worker_analysis_available=false
+          if [ -f /tmp/worker_analysis.csv ]; then
+            worker_analysis_available=true
+          fi
+          
+          # Start building the combined summary
+          {
+            echo "# DataPusher Plus Test Results"
+            echo ""
+            echo "## Summary"
             echo ""
             echo "| Metric | Value |"
             echo "|--------|-------|"
-            echo "| Total Files Tested | $total_tests |"
-            echo "| ✅ Passed | $passed |"
-            echo "| ❌ Failed | $failed |"
-            echo "| ⏭️ Skipped | $skipped_count |"
-            echo "| Success Rate | $success_rate% |"
+            echo "| Total Files in Directory | $total_files_in_dir |"
+            echo "| Files Tested | $total_tests |"
+            echo "| Files Skipped | $skipped_count |"
+            echo "| Passed | $passed |"
+            echo "| Failed | $failed |"
+            echo "| Errors | $error_count |"
+            echo "| Success Rate (Tested Files) | ${tested_success_rate}% |"
+            echo "| Success Rate (All Files) | ${overall_success_rate}% |"
             echo ""
             
-            # Skipped Files Analysis
+            # Show skipped files section if any exist
             if [ $skipped_count -gt 0 ]; then
               echo "## Skipped Files"
               echo ""
-              echo "<details>"
-              echo "<summary>Click to view $skipped_count skipped file(s)</summary>"
-              echo ""
-              echo "| File | Reason |"
-              echo "|------|--------|"
+              echo "| File Name | Reason Skipped |"
+              echo "|-----------|----------------|"
+              
               if [ -f /tmp/skipped_files.csv ]; then
                 tail -n +2 /tmp/skipped_files.csv | while IFS=',' read -r file_name reason; do
                   echo "| $file_name | $reason |"
                 done
               fi
               echo ""
-              echo "</details>"
-              echo ""
             fi
             
-            # Detailed Test Results
-            if [ $total_tests -gt 0 ]; then
-              echo "## Detailed Test Results"
-              echo ""
-              
-              # Successful uploads
-              if [ $passed -gt 0 ]; then
-                echo "### ✅ Successful Files ($passed)"
-                echo ""
-                echo "| File | Format | Rows Imported | Processing Time |"
-                echo "|------|--------|---------------|-----------------|"
-                tail -n +2 /tmp/test_results.csv | awk -F',' '$5 == "success" && $6 == "true"' | while IFS=',' read -r timestamp file_name upload_status resource_id datapusher_status datastore_active rows_imported processing_time error_message; do
-                  # Determine format from file extension
-                  format="${file_name##*.}"
-                  format_upper=$(echo "$format" | tr '[:lower:]' '[:upper:]')
-                  echo "| $file_name | $format_upper | $rows_imported | ${processing_time}s |"
-                done
-                echo ""
-              fi
-              
-              # Failed uploads
-              if [ $failed -gt 0 ]; then
-                echo "### ❌ Failed Files ($failed)"
-                echo ""
-                echo "| File | Upload Status | DataPusher Status | Error Message |"
-                echo "|------|---------------|-------------------|---------------|"
-                tail -n +2 /tmp/test_results.csv | awk -F',' '$5 != "success" || $6 != "true"' | while IFS=',' read -r timestamp file_name upload_status resource_id datapusher_status datastore_active rows_imported processing_time error_message; do
-                  clean_error=$(echo "$error_message" | sed 's/^"//;s/"$//')
-                  echo "| $file_name | $upload_status | $datapusher_status | $clean_error |"
-                done
-                echo ""
-              fi
-            fi
-            
-            # Worker Analysis Integration
-            if [ -f /tmp/worker_analysis.csv ]; then
+            # Show worker analysis table if available
+            if [ "$worker_analysis_available" = true ]; then
               total_jobs=$(tail -n +2 /tmp/worker_analysis.csv | wc -l)
-              
               if [ $total_jobs -gt 0 ]; then
-                echo "## DataPusher+ Worker Analysis"
+                echo "## Complete Job Analysis"
+                echo ""
+                echo "| # | File Name | Status | Records | Columns | Time (s) | Valid CSV | Headers Safe | Error Type | Quality Score |"
+                echo "|---|-----------|--------|---------|---------|----------|-----------|--------------|------------|---------------|"
+                
+                counter=1
+                tail -n +2 /tmp/worker_analysis.csv | while IFS=',' read timestamp job_id file_name status qsv_version file_format encoding normalized valid_csv sorted db_safe_headers analysis records total_time download_time analysis_time copying_time indexing_time formulae_time metadata_time rows_copied columns_indexed error_type error_message data_quality_score processing_efficiency; do
+                  # Don't truncate values - allow full content with horizontal scroll
+                  full_file_name=$(echo "$file_name" | sed 's/\.\.\.//')
+                  full_error_type="$error_type"
+                  full_headers="$db_safe_headers"
+                  
+                  # Handle empty values
+                  [ -z "$records" ] && records="0"
+                  [ -z "$columns_indexed" ] && columns_indexed="0"
+                  [ -z "$total_time" ] && total_time="0"
+                  [ -z "$data_quality_score" ] && data_quality_score="-"
+                  [ -z "$full_error_type" ] && full_error_type="-"
+                  
+                  # Add status emoji
+                  case "$status" in
+                    "SUCCESS") status_display="✅ SUCCESS" ;;
+                    "ERROR") status_display="❌ ERROR" ;;
+                    "INCOMPLETE") status_display="⏸️ INCOMPLETE" ;;
+                    *) status_display="❓ $status" ;;
+                  esac
+                  
+                  echo "| $counter | $full_file_name | $status_display | $records | $columns_indexed | $total_time | $valid_csv | $full_headers | $full_error_type | $data_quality_score |"
+                  counter=$((counter + 1))
+                done
                 echo ""
                 
-                # Performance Metrics
-                echo "### Performance Metrics"
-                echo ""
-                
+                # Add worker analysis sections
                 success_jobs=$(grep -c ",SUCCESS," /tmp/worker_analysis.csv || echo "0")
                 error_jobs=$(grep -c ",ERROR," /tmp/worker_analysis.csv || echo "0")
-                
-                echo "| Metric | Value |"
-                echo "|--------|-------|"
-                echo "| Total Jobs | $total_jobs |"
-                echo "| Successful Jobs | $success_jobs |"
-                echo "| Failed Jobs | $error_jobs |"
-                
-                if [ $success_jobs -gt 0 ]; then
-                  # Calculate average processing time
-                  avg_time=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | cut -d',' -f14 | awk '{sum+=$1; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}')
-                  total_records=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | cut -d',' -f13 | awk '{sum+=$1} END {print sum}')
-                  
-                  echo "| Avg Processing Time | ${avg_time}s |"
-                  echo "| Total Records Processed | $total_records |"
-                fi
-                echo ""
-                
-                # Performance breakdown if available
-                if [ $success_jobs -gt 0 ]; then
-                  echo "### Processing Time Breakdown"
-                  echo ""
-                  
-                  # Calculate averages for each phase
-                  avg_download=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | cut -d',' -f15 | awk '{sum+=$1; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}')
-                  avg_analysis=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | cut -d',' -f16 | awk '{sum+=$1; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}')
-                  avg_copying=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | cut -d',' -f17 | awk '{sum+=$1; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}')
-                  avg_indexing=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | cut -d',' -f18 | awk '{sum+=$1; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}')
-                  
-                  echo "| Phase | Avg Time |"
-                  echo "|-------|----------|"
-                  echo "| ⬇️ Download | ${avg_download}s |"
-                  echo "| 🔍 Analysis | ${avg_analysis}s |"
-                  echo "| 📥 COPYing | ${avg_copying}s |"
-                  echo "| 📇 Indexing | ${avg_indexing}s |"
-                  echo ""
-                fi
                 
                 # File Analysis
                 echo "## File Analysis"
                 echo ""
                 
                 if [ $success_jobs -gt 0 ]; then
-                  # Format Processing Summary (NEW)
-                  echo "### Format Processing Summary"
-                  echo ""
-                  
-                  echo "| Category | Formats | Files Processed |"
-                  echo "|----------|---------|-----------------|"
-                  
-                  # Tabular formats
-                  tabular_count=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | grep -E ",CSV,|,TSV,|,TAB,|,SSV," | wc -l)
-                  if [ $tabular_count -gt 0 ]; then
-                    echo "| 📊 Tabular Data | CSV, TSV, TAB, SSV | $tabular_count |"
-                  fi
-                  
-                  # Spreadsheet formats
-                  spreadsheet_count=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | grep -E ",XLSX,|,XLS,|,XLSM,|,XLSXB,|,ODS," | wc -l)
-                  if [ $spreadsheet_count -gt 0 ]; then
-                    echo "| 📈 Spreadsheets | Excel, ODS | $spreadsheet_count |"
-                  fi
-                  
-                  # Spatial formats
-                  spatial_count=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | grep -E ",GEOJSON,|,SHP,|,QGIS," | wc -l)
-                  if [ $spatial_count -gt 0 ]; then
-                    echo "| 🗺️ Spatial Data | GeoJSON, Shapefile | $spatial_count |"
-                  fi
-                  
-                  # Archive formats
-                  archive_count=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | grep ",ZIP," | wc -l)
-                  if [ $archive_count -gt 0 ]; then
-                    echo "| 📦 Archives | ZIP | $archive_count |"
-                  fi
-                  
-                  # Other formats
-                  other_count=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | grep -vE ",CSV,|,TSV,|,TAB,|,SSV,|,XLSX,|,XLS,|,XLSM,|,XLSXB,|,ODS,|,GEOJSON,|,SHP,|,QGIS,|,ZIP," | wc -l)
-                  if [ $other_count -gt 0 ]; then
-                    echo "| 🔧 Other | JSON, TXT, etc. | $other_count |"
-                  fi
-                  
-                  echo ""
-                  
-                  # File formats processed (existing, enhanced)
+                  # File formats processed
                   echo "### File Formats Processed"
                   echo ""
                   formats=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | cut -d',' -f6 | sort | uniq -c)
@@ -1332,15 +1288,11 @@ jobs:
                     echo "|--------|-------|------------|"
                     echo "$formats" | while read count format; do
                       percentage=$((count * 100 / success_jobs))
-                      # ENHANCED: Add format icons
+                      # Add format icon
                       case "$format" in
                         "CSV") format_icon="📊" ;;
-                        "TSV"|"TAB"|"SSV") format_icon="📋" ;;
-                        "XLSX"|"XLS"|"XLSM"|"XLSXB"|"ODS") format_icon="📈" ;;
+                        "XLSX"|"XLS") format_icon="📈" ;;
                         "JSON") format_icon="🔧" ;;
-                        "GEOJSON") format_icon="🗺️" ;;
-                        "SHP"|"QGIS") format_icon="🌍" ;;
-                        "ZIP") format_icon="📦" ;;
                         "TXT") format_icon="📝" ;;
                         *) format_icon="📄" ;;
                       esac
@@ -1351,7 +1303,7 @@ jobs:
                   fi
                   echo ""
                   
-                  # Encoding types (existing)
+                  # Encoding types
                   echo "### Encoding Distribution"
                   echo ""
                   encodings=$(tail -n +2 /tmp/worker_analysis.csv | grep ",SUCCESS," | cut -d',' -f7 | sort | uniq -c)
@@ -1374,244 +1326,22 @@ jobs:
                     echo "❌ No encoding data available"
                   fi
                   echo ""
-                  
-                  # NEW: Spatial Files Analysis
-                  echo "### Spatial Files Processing"
-                  echo ""
-                  
-                  spatial_jobs=$(tail -n +2 /tmp/worker_analysis.csv | grep -E ",GEOJSON,|,SHP,|,QGIS," | grep ",SUCCESS," | wc -l)
-                  
-                  if [ $spatial_jobs -gt 0 ]; then
-                    echo "**✅ Processed $spatial_jobs spatial file(s)**"
-                    echo ""
-                    echo "| File | Format | Features | Geometry Simplified | Coordinate System |"
-                    echo "|------|--------|----------|---------------------|-------------------|"
-                    
-                    tail -n +2 /tmp/worker_analysis.csv | grep -E ",GEOJSON,|,SHP,|,QGIS," | grep ",SUCCESS," | \
-                      cut -d',' -f3,6,26,25,27 | while IFS=',' read file format features simplified coords; do
-                      clean_file=$(echo "$file" | sed 's/^"//;s/"$//')
-                      clean_coords=$(echo "$coords" | sed 's/^"//;s/"$//')
-                      clean_simplified=$(echo "$simplified" | sed 's/^"//;s/"$//')
-                      
-                      if [ "$features" -gt 0 ] 2>/dev/null; then
-                        features_display="$features"
-                      else
-                        features_display="N/A"
-                      fi
-                      
-                      if [ -z "$clean_coords" ] || [ "$clean_coords" = "N/A" ]; then
-                        coords_display="Unknown"
-                      else
-                        coords_display="$clean_coords"
-                      fi
-                      
-                      if [ "$format" = "GEOJSON" ]; then
-                        format_display="🗺️ GeoJSON"
-                      elif [ "$format" = "SHP" ]; then
-                        format_display="🌍 Shapefile"
-                      else
-                        format_display="🌍 $format"
-                      fi
-                      
-                      echo "| $clean_file | $format_display | $features_display | $clean_simplified | $coords_display |"
-                    done
-                    echo ""
-                    
-                    total_features=$(tail -n +2 /tmp/worker_analysis.csv | grep -E ",GEOJSON,|,SHP,|,QGIS," | grep ",SUCCESS," | \
-                      cut -d',' -f26 | awk '{sum+=$1} END {print sum}')
-                    
-                    if [ "$total_features" -gt 0 ] 2>/dev/null; then
-                      echo "**Total Features Processed:** $total_features"
-                      echo ""
-                    fi
-                  else
-                    echo "ℹ️ No spatial files processed in this run"
-                    echo ""
-                  fi
-                  
-                  # NEW: ZIP Archive Analysis
-                  echo "### ZIP Archive Processing"
-                  echo ""
-                  
-                  zip_jobs=$(tail -n +2 /tmp/worker_analysis.csv | grep ",ZIP," | grep ",SUCCESS," | wc -l)
-                  
-                  if [ $zip_jobs -gt 0 ]; then
-                    echo "**✅ Processed $zip_jobs ZIP archive(s)**"
-                    echo ""
-                    echo "| File | Processing Method | Details |"
-                    echo "|------|-------------------|---------|"
-                    
-                    tail -n +2 /tmp/worker_analysis.csv | grep ",ZIP," | grep ",SUCCESS," | \
-                      cut -d',' -f3,28,29,30,31 | while IFS=',' read file decompressed extracted entries auto_file; do
-                      clean_file=$(echo "$file" | sed 's/^"//;s/"$//')
-                      clean_decompressed=$(echo "$decompressed" | sed 's/^"//;s/"$//')
-                      clean_auto_file=$(echo "$auto_file" | sed 's/^"//;s/"$//')
-                      
-                      if [ "$clean_decompressed" = "YES" ]; then
-                        if [ -n "$clean_auto_file" ] && [ "$clean_auto_file" != "N/A" ]; then
-                          method="🔓 Auto-extracted"
-                          details="Single file: \`$clean_auto_file\`"
-                        else
-                          method="🔓 Decompressed"
-                          details="$extracted file(s) extracted"
-                        fi
-                      elif [ "$entries" -gt 0 ] 2>/dev/null; then
-                        method="📋 Manifest Created"
-                        details="$entries entries listed"
-                      else
-                        method="⚙️ Processed"
-                        details="Details not available"
-                      fi
-                      
-                      echo "| $clean_file | $method | $details |"
-                    done
-                    echo ""
-                  else
-                    echo "ℹ️ No ZIP files processed in this run"
-                    echo ""
-                  fi
-                  
-                  # NEW: Excel Sheet Information
-                  echo "### Excel File Sheet Selection"
-                  echo ""
-                  
-                  excel_jobs=$(tail -n +2 /tmp/worker_analysis.csv | grep -E ",XLSX,|,XLS,|,XLSM,|,XLSXB,|,ODS," | grep ",SUCCESS," | wc -l)
-                  
-                  if [ $excel_jobs -gt 0 ]; then
-                    sheets_with_info=$(tail -n +2 /tmp/worker_analysis.csv | grep -E ",XLSX,|,XLS,|,XLSM,|,XLSXB,|,ODS," | grep ",SUCCESS," | \
-                      cut -d',' -f32 | grep -v "^$" | grep -v "^\"\"$" | wc -l)
-                    
-                    if [ "$sheets_with_info" -gt 0 ]; then
-                      echo "**📊 Excel files with sheet information:**"
-                      echo ""
-                      echo "| File | Sheet Used | Sheet Index |"
-                      echo "|------|------------|-------------|"
-                      
-                      tail -n +2 /tmp/worker_analysis.csv | grep -E ",XLSX,|,XLS,|,XLSM,|,XLSXB,|,ODS," | grep ",SUCCESS," | \
-                        cut -d',' -f3,32,33 | while IFS=',' read file sheet index; do
-                        clean_file=$(echo "$file" | sed 's/^"//;s/"$//')
-                        clean_sheet=$(echo "$sheet" | sed 's/^"//;s/"$//')
-                        clean_index=$(echo "$index" | sed 's/^"//;s/"$//')
-                        
-                        if [ -n "$clean_sheet" ] && [ "$clean_sheet" != "" ]; then
-                          if [ "$clean_index" = "0" ]; then
-                            index_display="0 (first sheet)"
-                          elif [ "$clean_index" = "-1" ]; then
-                            index_display="-1 (last sheet)"
-                          else
-                            index_display="$clean_index"
-                          fi
-                          
-                          echo "| $clean_file | $clean_sheet | $index_display |"
-                        fi
-                      done
-                      echo ""
-                    else
-                      echo "ℹ️ $excel_jobs Excel file(s) processed (sheet information not captured)"
-                      echo ""
-                    fi
-                  else
-                    echo "ℹ️ No Excel files processed in this run"
-                    echo ""
-                  fi
                 fi
                 
-                # ENHANCED: Error Analysis
+                # Error Analysis
                 echo "## Error Analysis"
                 echo ""
                 if [ $error_jobs -gt 0 ]; then
                   echo "### Failed Files Details"
                   echo ""
-                  
-                  # Error Type Distribution
-                  echo "#### Error Type Distribution"
                   echo ""
-                  error_types=$(tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | cut -d',' -f23 | sort | uniq -c | sort -rn)
-                  if [ -n "$error_types" ]; then
-                    echo "| Error Type | Count | Severity |"
-                    echo "|------------|-------|----------|"
-                    echo "$error_types" | while read count error_type; do
-                      case "$error_type" in
-                        "CORRUPTED_EXCEL") 
-                          severity="🔴 High"
-                          ;;
-                        "SHAPEFILE_ERROR"|"GEOJSON_ERROR")
-                          severity="🟠 Medium"
-                          ;;
-                        "GEOMETRY_ERROR"|"COORDINATE_SYSTEM_ERROR")
-                          severity="🟡 Medium"
-                          ;;
-                        "ZIP_ERROR")
-                          severity="🟠 Medium"
-                          ;;
-                        "QSV_ERROR")
-                          severity="🔴 High"
-                          ;;
-                        "INVALID_URL")
-                          severity="🟢 Low"
-                          ;;
-                        "FORMAT_CONVERSION_ERROR")
-                          severity="🟠 Medium"
-                          ;;
-                        *)
-                          severity="⚪ Unknown"
-                          ;;
-                      esac
-                      echo "| $error_type | $count | $severity |"
-                    done
-                    echo ""
-                  fi
-                  
-                  echo "#### Failed Files List"
-                  echo ""
-                  echo "| File | Format | Error Type | Error Message |"
-                  echo "|------|--------|------------|---------------|"
-                  tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | cut -d',' -f3,6,23,24 | while IFS=',' read file format error_type error_msg; do
+                  echo "| File | Error Type | Error Message |"
+                  echo "|------|------------|---------------|"
+                  tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | cut -d',' -f3,23,24 | while IFS=',' read file error_type error_msg; do
                     clean_error=$(echo "$error_msg" | sed 's/^"//;s/"$//')
                     clean_file=$(echo "$file" | sed 's/\.\.\.//')
-                    
-                    case "$format" in
-                      "GEOJSON") format_display="🗺️ $format" ;;
-                      "SHP") format_display="🌍 $format" ;;
-                      "ZIP") format_display="📦 $format" ;;
-                      "XLSX"|"XLS") format_display="📈 $format" ;;
-                      *) format_display="$format" ;;
-                    esac
-                    
-                    echo "| $clean_file | $format_display | $error_type | $clean_error |"
+                    echo "| $clean_file | $error_type | $clean_error |"
                   done
-                  echo ""
-                  
-                  # Troubleshooting Recommendations
-                  echo "#### Troubleshooting Recommendations"
-                  echo ""
-                  
-                  geojson_errors=$(tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | grep -c "GEOJSON_ERROR" || echo "0")
-                  shapefile_errors=$(tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | grep -c "SHAPEFILE_ERROR" || echo "0")
-                  zip_errors=$(tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | grep -c "ZIP_ERROR" || echo "0")
-                  geometry_errors=$(tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | grep -c "GEOMETRY_ERROR" || echo "0")
-                  coord_errors=$(tail -n +2 /tmp/worker_analysis.csv | grep ",ERROR," | grep -c "COORDINATE_SYSTEM_ERROR" || echo "0")
-                  
-                  if [ "$geojson_errors" -gt 0 ]; then
-                    echo "- **GeoJSON Errors ($geojson_errors):** Validate GeoJSON structure using [geojsonlint.com](https://geojsonlint.com). Ensure all features have valid geometry."
-                  fi
-                  
-                  if [ "$shapefile_errors" -gt 0 ]; then
-                    echo "- **Shapefile Errors ($shapefile_errors):** Verify shapefile completeness (ensure .shp, .shx, .dbf files are present). Check for file corruption."
-                  fi
-                  
-                  if [ "$zip_errors" -gt 0 ]; then
-                    echo "- **ZIP Errors ($zip_errors):** Verify ZIP archive integrity. Ensure files are not password-protected. Check compression method compatibility."
-                  fi
-                  
-                  if [ "$geometry_errors" -gt 0 ]; then
-                    echo "- **Geometry Errors ($geometry_errors):** Simplify complex geometries before upload. Consider reducing geometry precision."
-                  fi
-                  
-                  if [ "$coord_errors" -gt 0 ]; then
-                    echo "- **Coordinate System Errors ($coord_errors):** Ensure spatial files have valid projection defined. Consider reprojecting to EPSG:4326 (WGS84)."
-                  fi
-                  
                   echo ""
                 else
                   echo "✅ **No errors found in worker logs** - All processed jobs completed successfully!"
@@ -1633,26 +1363,26 @@ jobs:
               fi
             fi
             
-            # Add comprehensive analysis based on results
+            # Add comprehensive analysis based on results (keep original logic)
             if [ $total_tests -eq 0 ] && [ $skipped_count -gt 0 ]; then
-              echo "## ⚠️ No Testable Files"
+              echo "##  No Testable Files ⚠️"
               echo ""
               echo "All files in the test directory were skipped."
               echo ""
               echo "**Common reasons for skipped files:**"
-              echo "- Unsupported file formats (only .csv, .tsv, .tab, .ssv, .xls, .xlsx, .xlsm, .ods, .json, .geojson, .shp, .qgis, .zip supported)"
+              echo "- Unsupported file formats (only .csv, .tsv, .xlsx, .json, .geojson, .txt supported)"
               echo "- Files not accessible via HTTP server"
               echo "- Hidden files or system files"
               echo ""
               echo "**Recommendation:** Add supported data files to test directory."
               
             elif [ $total_tests -eq 0 ]; then
-              echo "## ❌ No Files Found"
+              echo "##  No Files Found ❌"
               echo ""
               echo "No files found in test directory to test."
               
             elif [ $passed -eq $total_tests ]; then
-              echo "## 🎉 All Tested Files Passed!"
+              echo "##  All Tested Files Passed! 🎉"
               echo ""
               echo "DataPusher Plus is working correctly with all testable files."
               if [ $skipped_count -gt 0 ]; then
@@ -1661,13 +1391,13 @@ jobs:
               fi
               
             elif [ $passed -gt 0 ]; then
-              echo "## ⚠️ Partial Success"
+              echo "## Result: Partial Success"
               echo ""
               echo "DataPusher Plus works with some files but has issues with others."
               echo ""
               
             else
-              echo "## ❌ All Tested Files Failed"
+              echo "## Result: All Tested Files Failed ❌"
               echo ""
               echo "DataPusher Plus is not working correctly with any tested files."
               echo ""
