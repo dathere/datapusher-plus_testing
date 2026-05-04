@@ -954,7 +954,7 @@ jobs:
               if [ -n "$resource_id" ] && [ "$resource_id" != "null" ]; then
                 # Monitor DataPusher Plus processing
                 echo "Monitoring DataPusher Plus processing for $file_name..."
-                max_attempts=90  # 3 minutes max per file
+                max_attempts=10  # 20 seconds max per file (10 attempts × 2s sleep)
                 
                 for attempt in $(seq 1 $max_attempts); do
                   sleep 2
