@@ -105,9 +105,14 @@ jobs:
           PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -Atc "SELECT 1 FROM pg_database WHERE datname='datastore_test'" | grep -q 1 || \
             PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "CREATE DATABASE datastore_test OWNER ckan_default;"
           echo "Granting permissions (best-effort)..."
-          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ckan_test TO ckan_default;"  
-          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE datastore_test TO datastore_write;"  
-          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "GRANT CONNECT ON DATABASE datastore_test TO datastore_read;"  
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ckan_test TO ckan_default;"
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE datastore_test TO datastore_write;"
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "GRANT CONNECT ON DATABASE datastore_test TO datastore_read;"
+          echo "Granting schema public privileges (required for PostgreSQL 15+)..."
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -d ckan_test -c "GRANT USAGE, CREATE ON SCHEMA public TO ckan_default;"
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -d datastore_test -c "GRANT USAGE, CREATE ON SCHEMA public TO datastore_write;"
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -d datastore_test -c "GRANT USAGE ON SCHEMA public TO datastore_read;"
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -d datastore_test -c "GRANT USAGE ON SCHEMA public TO ckan_default;"
           echo "Database setup completed"
 
 
@@ -476,18 +481,12 @@ jobs:
             PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "CREATE USER IF NOT EXISTS ckan_default WITH PASSWORD '$CKAN_DB_PASSWORD';"  
             PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres -c "CREATE DATABASE IF NOT EXISTS ckan_test OWNER ckan_default;"  
           fi
-          echo "Running ckan db init (may be idempotent)..."
-          if ckan -c /srv/app/src/ckan/test-core.ini db init; then
-            echo "CKAN DB initialized."
-          else
-            echo "ckan db init returned non-zero; continuing (may already be initialized)."
-          fi
+          echo "Running ckan db init..."
+          ckan -c /srv/app/src/ckan/test-core.ini db init
+          echo "CKAN DB initialized."
           echo "Setting datastore permissions..."
-          if ckan -c /srv/app/src/ckan/test-core.ini datastore set-permissions | PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres --set ON_ERROR_STOP=1; then
-            echo "Datastore permissions set."
-          else
-            echo "Datastore permission step returned non-zero; continuing."
-          fi
+          ckan -c /srv/app/src/ckan/test-core.ini datastore set-permissions | PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U postgres --set ON_ERROR_STOP=1
+          echo "Datastore permissions set."
       - name: Initialize DataPusher Plus database
         run: |
           set -eu
