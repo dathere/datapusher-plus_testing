@@ -37,7 +37,7 @@ jobs:
         image: ckan/ckan-solr:2.11-solr9
         ports: ["8983:8983"]
       postgres:
-        image: ckan/ckan-postgres-dev:2.11
+        image: postgres:15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -48,7 +48,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
-          --health-start-period 30s
+          --health-start-period 10s
       redis:
         image: redis:3
         ports: ["6379:6379"]
