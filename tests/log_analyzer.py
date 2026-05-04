@@ -29,7 +29,7 @@ def parse_worker_logs(log_file_path):
     # Split log into individual job entries by looking for job start pattern
     # Pattern: timestamp INFO [job_id] Setting log level to INFO
     job_pattern = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO\s+\[([a-f0-9-]{36})\] Setting log level to INFO'
-    
+
     # Find all job starts
     job_starts = list(re.finditer(job_pattern, log_content))
     processed_jobs = []
@@ -37,9 +37,9 @@ def parse_worker_logs(log_file_path):
     for i, match in enumerate(job_starts):
         job_start_pos = match.start()
         job_end_pos = job_starts[i + 1].start() if i + 1 < len(job_starts) else len(log_content)
-        
+
         entry = log_content[job_start_pos:job_end_pos]
-        
+
         # Extract timestamp and job ID from the match
         timestamp_str = match.group(1)
         job_id = match.group(2)
@@ -51,13 +51,14 @@ def parse_worker_logs(log_file_path):
         except:
             timestamp = timestamp_str
 
-        # Extract file information
+        # Extract file information — strip trailing '...' that DataPusher+ appends to log messages
         file_url_match = re.search(r'Fetching from: (.+)', entry)
-        file_url = file_url_match.group(1).strip() if file_url_match else "unknown"
+        file_url = file_url_match.group(1).strip().rstrip('. ') if file_url_match else "unknown"
         file_name = file_url.split('/')[-1] if file_url != "unknown" else "unknown"
 
         # Determine job status
-        if "DATAPUSHER+ JOB DONE!" in entry:
+        # New format uses "Pipeline completed successfully!" instead of "DATAPUSHER+ JOB DONE!"
+        if "Pipeline completed successfully!" in entry or "DATAPUSHER+ JOB DONE!" in entry:
             status = "SUCCESS"
         elif "ckanext.datapusher_plus.utils.JobError:" in entry:
             status = "ERROR"
@@ -76,8 +77,15 @@ def parse_worker_logs(log_file_path):
         encoding_match = re.search(r'Identified encoding of the file: (\w+)', entry)
         encoding = encoding_match.group(1) if encoding_match else ""
 
-        # Check normalization
-        normalized = "Successful" if "Normalized & transcoded" in entry else "Failed"
+        # Check normalization — CSV files get transcoded; spreadsheet formats get converted
+        if "Normalized & transcoded" in entry:
+            normalized = "Successful"
+        elif file_format in ("XLSX", "XLS", "ODS", "XLSM", "XLSXB") and "Converting" in entry:
+            normalized = "Converted"
+        elif file_format in ("XLSX", "XLS", "ODS", "XLSM", "XLSXB"):
+            normalized = "Converted"
+        else:
+            normalized = "Failed"
 
         # Check if valid CSV
         valid_csv = "TRUE" if "Well-formed, valid CSV file confirmed" in entry else "FALSE"
@@ -97,14 +105,14 @@ def parse_worker_logs(log_file_path):
             db_safe_headers = "Unknown"
 
         # Check analysis status
-        analysis_match = re.search(r'ANALYSIS DONE! Analyzed and prepped in ([\d.]+) seconds', entry)
-        analysis_status = "Successful" if analysis_match else "Failed"
+        analysis_status = "Successful" if "ANALYSIS DONE!" in entry else "Failed"
 
         # Extract records detected
         records_match = re.search(r'(\d+)\s+records detected', entry)
         records_processed = int(records_match.group(1)) if records_match else 0
 
-        # Extract timing information
+        # Extract timing information from per-stage inline messages (new log format)
+        # Falls back to old summary-block format for backward compatibility
         timings = {
             'total_time': 0.0,
             'download_time': 0.0,
@@ -115,34 +123,83 @@ def parse_worker_logs(log_file_path):
             'metadata_time': 0.0
         }
 
-        # Parse timing breakdown from the job summary
-        total_time_match = re.search(r'TOTAL ELAPSED TIME: ([\d.]+)', entry)
-        if total_time_match:
-            timings['total_time'] = float(total_time_match.group(1))
-
-        download_match = re.search(r'Download: ([\d.]+)', entry)
+        # Download time: "Fetched X.XXmb file in Y.YY seconds."
+        download_match = re.search(r'Fetched .+? in ([\d.]+) seconds', entry)
         if download_match:
             timings['download_time'] = float(download_match.group(1))
+        else:
+            # Old format fallback
+            old_dl = re.search(r'Download: ([\d.]+)', entry)
+            if old_dl:
+                timings['download_time'] = float(old_dl.group(1))
 
-        analysis_match = re.search(r'Analysis: ([\d.]+)', entry)
-        if analysis_match:
-            timings['analysis_time'] = float(analysis_match.group(1))
+        # Analysis time: "ANALYSIS DONE! Analyzed and prepped in X.XX seconds."
+        analysis_time_match = re.search(r'ANALYSIS DONE! Analyzed and prepped in ([\d.]+) seconds', entry)
+        if analysis_time_match:
+            timings['analysis_time'] = float(analysis_time_match.group(1))
+        else:
+            old_an = re.search(r'Analysis: ([\d.]+)', entry)
+            if old_an:
+                timings['analysis_time'] = float(old_an.group(1))
 
-        copying_match = re.search(r'COPYing: ([\d.]+)', entry)
+        # Copying time: "...copying done. Copied N rows to "..." in X.XX seconds."
+        copying_match = re.search(r'copying done\. Copied \d+ rows to ".+" in ([\d.]+) seconds', entry)
         if copying_match:
             timings['copying_time'] = float(copying_match.group(1))
+        else:
+            old_cp = re.search(r'COPYing: ([\d.]+)', entry)
+            if old_cp:
+                timings['copying_time'] = float(old_cp.group(1))
 
-        indexing_match = re.search(r'Indexing: ([\d.]+)', entry)
+        # Indexing time: "...indexing/vacuum analysis done. Indexed N column/s in "..." in X.XX seconds."
+        indexing_match = re.search(r'indexing/vacuum analysis done\. Indexed \d+ column/s in ".+" in ([\d.]+) seconds', entry)
         if indexing_match:
             timings['indexing_time'] = float(indexing_match.group(1))
+        else:
+            old_ix = re.search(r'Indexing: ([\d.]+)', entry)
+            if old_ix:
+                timings['indexing_time'] = float(old_ix.group(1))
 
+        # Metadata time: "RESOURCE METADATA UPDATES DONE! Resource metadata updated in X.XX seconds."
+        metadata_match = re.search(r'Resource metadata updated in ([\d.]+) seconds', entry)
+        if metadata_match:
+            timings['metadata_time'] = float(metadata_match.group(1))
+        else:
+            old_md = re.search(r'Resource metadata updates: ([\d.]+)', entry)
+            if old_md:
+                timings['metadata_time'] = float(old_md.group(1))
+
+        # Formulae time (old format only — skipped in new format)
         formulae_match = re.search(r'Formulae processing: ([\d.]+)', entry)
         if formulae_match:
             timings['formulae_time'] = float(formulae_match.group(1))
 
-        metadata_match = re.search(r'Resource metadata updates: ([\d.]+)', entry)
-        if metadata_match:
-            timings['metadata_time'] = float(metadata_match.group(1))
+        # Total time: prefer old explicit summary; otherwise derive from start/end timestamps
+        total_time_match = re.search(r'TOTAL ELAPSED TIME: ([\d.]+)', entry)
+        if total_time_match:
+            timings['total_time'] = float(total_time_match.group(1))
+        else:
+            end_ts_match = re.search(
+                r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) INFO\s+\[' + re.escape(job_id) + r'\] Pipeline completed successfully!',
+                entry
+            )
+            if end_ts_match:
+                try:
+                    start_dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f')
+                    end_dt = datetime.strptime(end_ts_match.group(1), '%Y-%m-%d %H:%M:%S,%f')
+                    timings['total_time'] = round((end_dt - start_dt).total_seconds(), 3)
+                except Exception:
+                    timings['total_time'] = round(sum([
+                        timings['download_time'], timings['analysis_time'],
+                        timings['copying_time'], timings['indexing_time'],
+                        timings['formulae_time'], timings['metadata_time']
+                    ]), 3)
+            else:
+                timings['total_time'] = round(sum([
+                    timings['download_time'], timings['analysis_time'],
+                    timings['copying_time'], timings['indexing_time'],
+                    timings['formulae_time'], timings['metadata_time']
+                ]), 3)
 
         # Extract rows copied
         rows_copied_match = re.search(r'Copied (\d+) rows to', entry)
