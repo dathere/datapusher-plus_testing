@@ -26,6 +26,7 @@ env:
   CKAN_SITE_URL: http://localhost:5000
   CKAN_SITE_ID: default
   CKAN_SITE_TITLE: "CKAN Test Instance"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   setup:
     runs-on: ubuntu-latest
